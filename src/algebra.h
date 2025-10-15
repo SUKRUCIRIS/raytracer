@@ -1,24 +1,47 @@
 #pragma once
-#include <immintrin.h> //sse2
+#include <smmintrin.h> // SSE4.1
+#include <stdio.h>
+
+class simd_vec3;
 
 struct vec3
 {
-	float x, y, z;
+public:
+	friend class simd_vec3;
+	vec3() : vec(_mm_setzero_ps()) {};
+	vec3(float a, float b, float c) : x(a), y(b), z(c), vec(_mm_load_ps(&this->x)) {};
+	void store()
+	{
+		_mm_store_ps(&this->x, vec);
+	}
+	float get_x() { return x; };
+	float get_y() { return y; };
+	float get_z() { return z; };
+	void print()
+	{
+		printf("\nmem: %p x: %f y: %f z: %f\n", this, x, y, z);
+	}
+
+private:
+	float x = 0, y = 0, z = 0;
+	float padding = 0;
+	__m128 vec;
 };
 
-class simd_calculator
+class simd_vec3
 {
 private:
-	__m128 s1;
-	__m128 s2;
-	__m128 d;
+	__m128 d, d1, d2;
 
 public:
-	void vec3_mult(const vec3 &a, const vec3 &b, vec3 &c);
-	void vec3_add(const vec3 &a, const vec3 &b, vec3 &c);
-	void vec3_subs(const vec3 &a, const vec3 &b, vec3 &c);
-	void vec3_div(const vec3 &a, const vec3 &b, vec3 &c);
-	void vec3_scale(const vec3 &a, const float scale, vec3 &c);
-	void vec3_dot(const vec3 &a, const vec3 &b, vec3 &c);
-	void vec3_cross(const vec3 &a, const vec3 &b, vec3 &c);
+	void mult(const vec3 &a, const vec3 &b, vec3 &c);
+	void add(const vec3 &a, const vec3 &b, vec3 &c);
+	void subs(const vec3 &a, const vec3 &b, vec3 &c);
+	void div(const vec3 &a, const vec3 &b, vec3 &c);
+	void mult_scalar(const vec3 &a, const float s, vec3 &c);
+	void add_scalar(const vec3 &a, const float s, vec3 &c);
+	void dot(const vec3 &a, const vec3 &b, float &c);
+	void cross(const vec3 &a, const vec3 &b, vec3 &c);
+	void length_squared(const vec3 &a, float &c);
+	void normalize(const vec3 &a, vec3 &c);
 };
