@@ -4,7 +4,7 @@
 
 class simd_vec3;
 
-struct vec3
+struct alignas(16) vec3
 {
 public:
 	friend class simd_vec3;
