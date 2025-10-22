@@ -50,7 +50,22 @@ void simd_vec3::length_squared(const vec3 &a, float &c)
 }
 void simd_vec3::normalize(const vec3 &a, vec3 &c)
 {
-	d = _mm_dp_ps(a.vec, a.vec, 0x7F);
-	d1 = _mm_rsqrt_ps(d);
-	c.vec = _mm_mul_ps(a.vec, d1);
+	d = _mm_dp_ps(a.vec, a.vec, 0xFF);
+	d1 = _mm_sqrt_ps(d);
+
+	d2 = _mm_set_ps1(1e-12f);
+	d = _mm_cmpgt_ps(d1, d2);
+	d1 = _mm_blendv_ps(_mm_set_ps1(1.0f), d1, d);
+
+	c.vec = _mm_div_ps(a.vec, d1);
+}
+
+void simd_vec3::max(const vec3 &a, const vec3 &b, vec3 &c)
+{
+	c.vec = _mm_max_ps(a.vec, b.vec);
+}
+
+void simd_vec3::min(const vec3 &a, const vec3 &b, vec3 &c)
+{
+	c.vec = _mm_min_ps(a.vec, b.vec);
 }

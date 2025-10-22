@@ -10,14 +10,22 @@ public:
 	friend class simd_vec3;
 	vec3() : vec(_mm_setzero_ps()) {};
 	vec3(float a, float b, float c) : x(a), y(b), z(c), vec(_mm_load_ps(&this->x)) {};
+	void load(float a, float b, float c, float d = 0)
+	{
+		x = a;
+		y = b;
+		z = c;
+		padding = d;
+		vec = _mm_load_ps(&this->x);
+	}
 	void store()
 	{
 		_mm_store_ps(&this->x, vec);
 	}
-	float get_x() { return x; };
-	float get_y() { return y; };
-	float get_z() { return z; };
-	void print()
+	float get_x() const { return x; };
+	float get_y() const { return y; };
+	float get_z() const { return z; };
+	void print() const
 	{
 		printf("\nmem: %p x: %f y: %f z: %f\n", this, x, y, z);
 	}
@@ -44,4 +52,6 @@ public:
 	void cross(const vec3 &a, const vec3 &b, vec3 &c);
 	void length_squared(const vec3 &a, float &c);
 	void normalize(const vec3 &a, vec3 &c);
+	void max(const vec3 &a, const vec3 &b, vec3 &c);
+	void min(const vec3 &a, const vec3 &b, vec3 &c);
 };
