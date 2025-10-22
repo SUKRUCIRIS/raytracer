@@ -15,8 +15,7 @@ void simd_vec3::subs(const vec3 &a, const vec3 &b, vec3 &c)
 }
 void simd_vec3::div(const vec3 &a, const vec3 &b, vec3 &c)
 {
-	d = _mm_rcp_ps(b.vec);
-	c.vec = _mm_mul_ps(a.vec, d);
+	c.vec = _mm_div_ps(a.vec, b.vec);
 }
 void simd_vec3::mult_scalar(const vec3 &a, const float s, vec3 &c)
 {
