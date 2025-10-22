@@ -1,4 +1,5 @@
 #include "algebra.h"
+#include "../third_party/sse_mathfun/sse_mathfun.h"
 
 void simd_vec3::mult(const vec3 &a, const vec3 &b, vec3 &c)
 {
@@ -68,4 +69,12 @@ void simd_vec3::max(const vec3 &a, const vec3 &b, vec3 &c)
 void simd_vec3::min(const vec3 &a, const vec3 &b, vec3 &c)
 {
 	c.vec = _mm_min_ps(a.vec, b.vec);
+}
+
+void simd_vec3::pow(const vec3 &a, const float b, vec3 &c)
+{
+	d = _mm_set1_ps(b);
+	d1 = log_ps(a.vec);
+	d2 = _mm_mul_ps(d, d1);
+	c.vec = exp_ps(d2);
 }

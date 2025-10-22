@@ -54,4 +54,5 @@ public:
 	void normalize(const vec3 &a, vec3 &c);
 	void max(const vec3 &a, const vec3 &b, vec3 &c);
 	void min(const vec3 &a, const vec3 &b, vec3 &c);
+	void pow(const vec3 &a, const float b, vec3 &c);
 };

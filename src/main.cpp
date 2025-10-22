@@ -1,4 +1,3 @@
-#include "tp.h"
 #include "parser.h"
 #include "algebra.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -120,14 +119,24 @@ vec3 ray_trace(simd_vec3 &calculator, std::vector<shape *> *shapes, vec3 ray_ori
 		calculator.add(color, specular, color);
 	}
 
-	calculator.mult_scalar(color, 0.00015f, color);
+	vec3 denominator_vec;
+	calculator.add_scalar(color, 1.0f, denominator_vec);
+	calculator.div(color, denominator_vec, color);
+
+	const float gamma = 2000.0f;
+	calculator.pow(color, gamma, color);
 
 	return color;
 }
 
 int main(int argc, char **argv)
 {
-	parser p("./inputs/spheres.json");
+	if (argc != 2)
+	{
+		printf("Just give input json name...\n");
+		return 0;
+	}
+	parser p(argv[1]);
 
 	simd_vec3 calculator;
 

@@ -1,7 +1,8 @@
 #pragma once
-#include "tp.h"
 #include "camera.h"
 #include "shapes.h"
+#include "../third_party/rapidjson/include/rapidjson/rapidjson.h"
+#include "../third_party/rapidjson/include/rapidjson/document.h"
 
 class parser
 {
