@@ -3,9 +3,9 @@
 #include <cfloat>
 #include <cmath>
 
-void ray_trace(simd_vec3 &calculator, std::vector<shape *> *shapes, vec3 ray_origin, vec3 ray_dir, float intersectionepsilon,
-			   float shadowrayepsilon, vec3 ambientlight, std::vector<point_light> *point_lights, vec3 backgroundcolor,
-			   unsigned char *output, const int index)
+void ray_trace(simd_vec3 &calculator, const std::vector<shape *> *shapes, const vec3 &ray_origin, const vec3 &ray_dir, const float &intersectionepsilon,
+			   const float &shadowrayepsilon, const vec3 &ambientlight, const std::vector<point_light> *point_lights, const vec3 &backgroundcolor,
+			   unsigned char *output, const int &index)
 {
 	float t;
 	float min_t = FLT_MAX;
@@ -28,7 +28,6 @@ void ray_trace(simd_vec3 &calculator, std::vector<shape *> *shapes, vec3 ray_ori
 	// 2. No intersection -> return background
 	if (!min_shape)
 	{
-		backgroundcolor.store();
 		output[index * 3] = static_cast<unsigned char>(std::clamp(backgroundcolor.get_x() * 255, 0.0f, 255.0f));
 		output[index * 3 + 1] = static_cast<unsigned char>(std::clamp(backgroundcolor.get_y() * 255, 0.0f, 255.0f));
 		output[index * 3 + 2] = static_cast<unsigned char>(std::clamp(backgroundcolor.get_z() * 255, 0.0f, 255.0f));

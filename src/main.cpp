@@ -72,6 +72,11 @@ int main(int argc, char **argv)
 		int index_count_per_thread = camera.ray_dirs.size() / thread_count;
 		index_count_per_thread++;
 		int index_start = 0;
+		if (thread_count <= 0)
+		{
+			printf("Invalid thread count\n");
+			return -1;
+		}
 		std::thread *ths = new std::thread[thread_count];
 		for (int i = 0; i < thread_count; i++)
 		{

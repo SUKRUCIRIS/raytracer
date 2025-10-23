@@ -150,7 +150,29 @@ std::vector<material> *parser::get_materials()
 
 		material new_material;
 
-		// Safely parse each component of the material
+		// --- 1. Material Type Parsing ---
+		if (mat_json.HasMember("type"))
+		{
+			std::string type_str = mat_json.GetString(); // Assuming GetString() returns the type
+			if (type_str == "mirror")
+			{
+				new_material.mt = Mirror;
+			}
+			else if (type_str == "dielectric")
+			{
+				new_material.mt = Dielectric;
+			}
+			else if (type_str == "conductor")
+			{
+				new_material.mt = Conductor;
+			}
+			else
+			{
+				new_material.mt = Regular;
+			}
+		}
+
+		// --- 2. Common Properties ---
 		if (mat_json.HasMember("AmbientReflectance"))
 		{
 			new_material.AmbientReflectance = parseVec3(mat_json["AmbientReflectance"].GetString());
@@ -166,6 +188,28 @@ std::vector<material> *parser::get_materials()
 		if (mat_json.HasMember("PhongExponent"))
 		{
 			new_material.PhongExponent = std::stof(mat_json["PhongExponent"].GetString());
+		}
+
+		// --- 3. Refractive/Metallic Properties ---
+		if (mat_json.HasMember("MirrorReflectance"))
+		{
+			// Used by Mirror and Conductor (Chromatic Reflectance)
+			new_material.MirrorReflectance = parseVec3(mat_json["MirrorReflectance"].GetString());
+		}
+		if (mat_json.HasMember("AbsorptionCoefficient"))
+		{
+			// Used by Dielectric for Beer's Law attenuation
+			new_material.AbsorptionCoefficient = parseVec3(mat_json["AbsorptionCoefficient"].GetString());
+		}
+		if (mat_json.HasMember("RefractionIndex"))
+		{
+			// Used by Dielectric (eta) and Conductor (n)
+			new_material.RefractionIndex = std::stof(mat_json["RefractionIndex"].GetString());
+		}
+		if (mat_json.HasMember("AbsorptionIndex"))
+		{
+			// Used by Conductor (k)
+			new_material.AbsorptionIndex = std::stof(mat_json["AbsorptionIndex"].GetString());
 		}
 
 		// Note: The material "_id" is ignored as the function returns a simple vector.

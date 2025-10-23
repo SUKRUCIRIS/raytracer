@@ -13,12 +13,25 @@ struct point_light
 	vec3 intensity;
 };
 
+enum material_type
+{
+	Regular,
+	Mirror,
+	Conductor,
+	Dielectric
+};
+
 struct material
 {
-	vec3 AmbientReflectance;
-	vec3 DiffuseReflectance;
-	vec3 SpecularReflectance;
-	float PhongExponent;
+	material_type mt = Regular;
+	vec3 AmbientReflectance{0, 0, 0};
+	vec3 DiffuseReflectance{0, 0, 0};
+	vec3 SpecularReflectance{0, 0, 0};
+	float PhongExponent = 1;
+	vec3 MirrorReflectance{0, 0, 0};
+	vec3 AbsorptionCoefficient{0, 0, 0};
+	float RefractionIndex = 0;
+	float AbsorptionIndex = 1;
 };
 
 enum shape_type

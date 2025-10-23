@@ -77,3 +77,8 @@ void simd_vec3::pow(const vec3 &a, const float b, vec3 &c)
 	d2 = _mm_mul_ps(d, d1);
 	c.vec = exp_ps(d2);
 }
+
+void simd_vec3::exp(const vec3 &a, vec3 &c)
+{
+	c.vec = exp_ps(a.vec);
+}
