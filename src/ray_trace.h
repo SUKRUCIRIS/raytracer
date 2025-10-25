@@ -23,6 +23,9 @@ private:
 
 	static void calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I, vec3 &R);
 
+	static bool calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I,
+										float n1, float n2, vec3 &T);
+
 public:
 	ray_tracer() = delete;
 	ray_tracer(const std::vector<shape *> *shapes,

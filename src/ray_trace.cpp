@@ -91,6 +91,36 @@ void ray_tracer::calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, c
 	calculator.normalize(R, R);
 }
 
+bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I,
+										 float n1, float n2, vec3 &T)
+{
+	float cosi;
+	calculator.dot(I, N, cosi);
+	cosi = -cosi;
+	vec3 normal = N;
+	float eta = n1 / n2;
+	if (cosi < 0.0f)
+	{
+		cosi = -cosi;
+		eta = n2 / n1;
+		calculator.mult_scalar(N, -1.0f, normal);
+	}
+
+	float k = 1.0f - eta * eta * (1.0f - cosi * cosi);
+	if (k < 0.0f)
+	{
+		return false;
+	}
+
+	vec3 term1, term2;
+	calculator.mult_scalar(I, eta, term1);
+	calculator.mult_scalar(normal, (eta * cosi - sqrtf(k)), term2);
+	calculator.add(term1, term2, T);
+	calculator.normalize(T, T);
+
+	return true;
+}
+
 void ray_tracer::trace_rec(simd_vec3 &calculator, const vec3 &ray_origin, const vec3 &ray_dir,
 						   vec3 &color, int depth) const
 {
@@ -135,6 +165,118 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, const vec3 &ray_origin, const 
 		calculator.add(hit_point, offset, hit_point);
 		trace_rec(calculator, hit_point, R, color, depth + 1);
 		calculator.mult(color, mat->MirrorReflectance, color);
+
+		vec3 own_color;
+		calculate_color(calculator, normal, mat, hit_point, ray_origin, min_shape, own_color);
+		calculator.add(color, own_color, color);
+	}
+	else if (mat->mt == Conductor)
+	{
+		vec3 R;
+		calculate_reflected_dir(calculator, normal, ray_dir, R);
+
+		float cosTheta;
+		calculator.dot(ray_dir, normal, cosTheta);
+		cosTheta = fabsf(cosTheta);
+
+		vec3 F;
+		vec3 n(mat->RefractionIndex, mat->RefractionIndex, mat->RefractionIndex);
+		vec3 k(mat->AbsorptionIndex, mat->AbsorptionIndex, mat->AbsorptionIndex);
+
+		vec3 cosVec(cosTheta, cosTheta, cosTheta);
+
+		vec3 n2, k2;
+		calculator.mult(n, n, n2);
+		calculator.mult(k, k, k2);
+
+		vec3 temp1, temp2, num, den, Rs, Rp;
+		calculator.mult_scalar(n, 2.0f * cosTheta, temp1);
+		calculator.subs(n2, temp1, num);
+		calculator.add(num, k2, num);
+		vec3 cos2;
+		calculator.mult_scalar(cosVec, cosTheta, cos2);
+		calculator.add(num, cos2, num);
+
+		calculator.add(n2, k2, den);
+		calculator.add_scalar(den, 2.0f * n.get_x() * cosTheta, den);
+		calculator.add(den, cos2, den);
+		calculator.div(num, den, Rs);
+
+		Rp = Rs;
+
+		calculator.add(Rs, Rp, F);
+		calculator.mult_scalar(F, 0.5f, F);
+
+		calculator.mult(F, mat->MirrorReflectance, F);
+
+		vec3 reflectedColor;
+		vec3 offset;
+		calculator.mult_scalar(normal, shadowrayepsilon, offset);
+		calculator.add(hit_point, offset, hit_point);
+
+		trace_rec(calculator, hit_point, R, reflectedColor, depth + 1);
+		calculator.mult(reflectedColor, F, color);
+
+		vec3 own_color;
+		calculate_color(calculator, normal, mat, hit_point, ray_origin, min_shape, own_color);
+		calculator.add(color, own_color, color);
+	}
+	else if (mat->mt == Dielectric)
+	{
+		float n1 = 1.0f;
+		float n2 = mat->RefractionIndex;
+
+		float cosTheta;
+		calculator.dot(ray_dir, normal, cosTheta);
+
+		bool entering = cosTheta < 0.0f;
+		if (!entering)
+		{
+			std::swap(n1, n2);
+			calculator.mult_scalar(normal, -1.0f, normal);
+			cosTheta = -cosTheta;
+		}
+
+		float cosI = -cosTheta;
+		cosI = std::clamp(cosI, 0.0f, 1.0f);
+
+		float r0 = (n1 - n2) / (n1 + n2);
+		r0 = r0 * r0;
+		float F = r0 + (1.0f - r0) * powf(1.0f - cosI, 5.0f);
+
+		vec3 reflectDir, reflectColor;
+		calculate_reflected_dir(calculator, normal, ray_dir, reflectDir);
+		vec3 offsetR;
+		calculator.mult_scalar(normal, shadowrayepsilon, offsetR);
+		calculator.add(hit_point, offsetR, offsetR);
+		trace_rec(calculator, offsetR, reflectDir, reflectColor, depth + 1);
+
+		calculator.mult(reflectColor, mat->MirrorReflectance, reflectColor);
+
+		vec3 refractDir, refractColor;
+		bool refracts = calculate_refracted_dir(calculator, normal, ray_dir, n1, n2, refractDir);
+
+		if (refracts)
+		{
+			vec3 offsetT;
+			calculator.mult_scalar(normal, -shadowrayepsilon, offsetT);
+			calculator.add(hit_point, offsetT, offsetT);
+			trace_rec(calculator, offsetT, refractDir, refractColor, depth + 1);
+
+			if (!entering)
+			{
+				vec3 attenuation;
+				calculator.mult_scalar(mat->AbsorptionCoefficient, -min_t, attenuation);
+				calculator.exp(attenuation, attenuation);
+				calculator.mult(refractColor, attenuation, refractColor);
+			}
+		}
+
+		vec3 reflectScaled, refractScaled;
+		calculator.mult_scalar(reflectColor, F, reflectScaled);
+		calculator.mult_scalar(refractColor, 1.0f - F, refractScaled);
+		calculator.add(reflectScaled, refractScaled, color);
+
 		vec3 own_color;
 		calculate_color(calculator, normal, mat, hit_point, ray_origin, min_shape, own_color);
 		calculator.add(color, own_color, color);
