@@ -22,6 +22,11 @@ int main(int argc, char **argv)
 		printf("Just give input json name and thread count:\n./raytracer json_file thread_count\n");
 		return 0;
 	}
+	if (thread_count <= 0)
+	{
+		printf("Invalid thread count\n");
+		return -1;
+	}
 
 	printf("SIMD On / Thread count: %d\n", thread_count);
 	printf("JSON parsing started\n");
@@ -43,6 +48,8 @@ int main(int argc, char **argv)
 
 	float shadowrayepsilon = p.get_shadowrayepsilon();
 
+	float maxdepth = p.get_maxrecursiondepth();
+
 	vec3 backgroundcolor = p.get_backgroundcolor();
 
 	vec3 ambientlight = p.get_ambientlight();
@@ -54,29 +61,25 @@ int main(int argc, char **argv)
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 	printf("JSON parsing done: %d ms\n", duration.count());
+	auto rt = new ray_tracer(shapes, intersectionepsilon, shadowrayepsilon, ambientlight,
+							 point_lights, backgroundcolor, maxdepth);
 
 	for (auto &&camera : *cameras)
 	{
 		printf("%s started\n", camera.output.c_str());
 		start = std::chrono::high_resolution_clock::now();
 		unsigned char *output = new unsigned char[camera.resx * camera.resy * 3];
-		auto ray_thread = [shapes, camera, intersectionepsilon, shadowrayepsilon, ambientlight, point_lights, backgroundcolor, output](int index_start, int index_end)
+		auto ray_thread = [rt, camera, output](int index_start, int index_end)
 		{
 			simd_vec3 calculatorp;
 			for (size_t index = index_start; index < camera.ray_dirs.size() && index < index_end; index++)
 			{
-				ray_trace(calculatorp, shapes, camera.position, camera.ray_dirs.at(index), intersectionepsilon, shadowrayepsilon,
-						  ambientlight, point_lights, backgroundcolor, output, index);
+				rt->trace(calculatorp, camera.position, camera.ray_dirs.at(index), index, output);
 			}
 		};
 		int index_count_per_thread = camera.ray_dirs.size() / thread_count;
 		index_count_per_thread++;
 		int index_start = 0;
-		if (thread_count <= 0)
-		{
-			printf("Invalid thread count\n");
-			return -1;
-		}
 		std::thread *ths = new std::thread[thread_count];
 		for (int i = 0; i < thread_count; i++)
 		{
@@ -102,6 +105,7 @@ int main(int argc, char **argv)
 		delete[] ths;
 	}
 
+	delete rt;
 	delete cameras;
 	for (auto &&shape : *shapes)
 	{

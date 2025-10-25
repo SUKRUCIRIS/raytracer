@@ -10,9 +10,9 @@ char *parser::get_json_content(const char *fileName)
 
 	fseek(fp, 0, SEEK_END);
 	long size = ftell(fp);
-	rewind(fp); // Back to start
+	rewind(fp);
 
-	char *file = (char *)calloc(size + 1, 1); // +1 for null terminator
+	char *file = (char *)calloc(size + 1, 1);
 	if (!file)
 	{
 		fclose(fp);
@@ -22,10 +22,9 @@ char *parser::get_json_content(const char *fileName)
 	size_t read = fread(file, 1, size, fp);
 	fclose(fp);
 
-	// Handle partial read
 	if (read < (size_t)size)
 	{
-		file[read] = '\0'; // Ensure termination
+		file[read] = '\0';
 	}
 	return file;
 }
@@ -120,26 +119,22 @@ std::vector<vec3> *parser::get_vertices()
 
 std::vector<material> *parser::get_materials()
 {
-	// Allocate the vector on the heap, as per the function signature.
 	auto *materials = new std::vector<material>;
 
-	// Check for the existence of the "Materials" node in the JSON document.
 	if (!d["Scene"].IsObject() || !d["Scene"]["Materials"].IsObject())
 	{
 		printf("Warning: No 'Materials' object found in scene.\n");
-		return materials; // Return the empty vector
+		return materials;
 	}
 
 	const auto &materialsNode = d["Scene"]["Materials"];
 	if (!materialsNode.HasMember("Material"))
 	{
-		return materials; // No "Material" key found
+		return materials;
 	}
 
-	// --- Helper lambda to parse a single JSON material object into the C++ struct ---
 	auto processMaterial = [&](const rapidjson::Value &mat_json)
 	{
-		// Internal helper to parse a "r g b" string into a vec3 object
 		auto parseVec3 = [](const char *str_val) -> vec3
 		{
 			std::istringstream iss(str_val);
@@ -150,10 +145,9 @@ std::vector<material> *parser::get_materials()
 
 		material new_material;
 
-		// --- 1. Material Type Parsing ---
-		if (mat_json.HasMember("type"))
+		if (mat_json.HasMember("_type"))
 		{
-			std::string type_str = mat_json.GetString(); // Assuming GetString() returns the type
+			std::string type_str = mat_json["_type"].GetString();
 			if (type_str == "mirror")
 			{
 				new_material.mt = Mirror;
@@ -172,7 +166,6 @@ std::vector<material> *parser::get_materials()
 			}
 		}
 
-		// --- 2. Common Properties ---
 		if (mat_json.HasMember("AmbientReflectance"))
 		{
 			new_material.AmbientReflectance = parseVec3(mat_json["AmbientReflectance"].GetString());
@@ -190,40 +183,30 @@ std::vector<material> *parser::get_materials()
 			new_material.PhongExponent = std::stof(mat_json["PhongExponent"].GetString());
 		}
 
-		// --- 3. Refractive/Metallic Properties ---
 		if (mat_json.HasMember("MirrorReflectance"))
 		{
-			// Used by Mirror and Conductor (Chromatic Reflectance)
 			new_material.MirrorReflectance = parseVec3(mat_json["MirrorReflectance"].GetString());
 		}
 		if (mat_json.HasMember("AbsorptionCoefficient"))
 		{
-			// Used by Dielectric for Beer's Law attenuation
 			new_material.AbsorptionCoefficient = parseVec3(mat_json["AbsorptionCoefficient"].GetString());
 		}
 		if (mat_json.HasMember("RefractionIndex"))
 		{
-			// Used by Dielectric (eta) and Conductor (n)
 			new_material.RefractionIndex = std::stof(mat_json["RefractionIndex"].GetString());
 		}
 		if (mat_json.HasMember("AbsorptionIndex"))
 		{
-			// Used by Conductor (k)
 			new_material.AbsorptionIndex = std::stof(mat_json["AbsorptionIndex"].GetString());
 		}
 
-		// Note: The material "_id" is ignored as the function returns a simple vector.
-		// The order of materials in the JSON file will determine their index in the vector.
-		// Material with ID "1" will be at index 0, ID "2" at index 1, and so on.
 		materials->emplace_back(new_material);
 	};
 
-	// --- Main Logic: Handle both single object and array cases ---
 	const auto &material_data = materialsNode["Material"];
 
 	if (material_data.IsArray())
 	{
-		// If it's an array, iterate and process each material object
 		for (const auto &mat_item : material_data.GetArray())
 		{
 			processMaterial(mat_item);
@@ -231,7 +214,6 @@ std::vector<material> *parser::get_materials()
 	}
 	else if (material_data.IsObject())
 	{
-		// If it's just a single object, process it
 		processMaterial(material_data);
 	}
 
@@ -240,10 +222,8 @@ std::vector<material> *parser::get_materials()
 
 std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3> *vertices, std::vector<material> *materials)
 {
-	// The vector of shape pointers we will build and return.
 	auto *shapes = new std::vector<shape *>;
 
-	// Check for the existence of the "Objects" node.
 	if (!d["Scene"].IsObject() || !d["Scene"].HasMember("Objects"))
 	{
 		printf("Warning: No 'Objects' found in scene.\n");
@@ -251,7 +231,6 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 	}
 	const auto &objects = d["Scene"]["Objects"];
 
-	// --- Helper Lambda to process a single "Mesh" JSON object ---
 	auto processMesh = [&](const rapidjson::Value &mesh)
 	{
 		if (!mesh.HasMember("Faces") || !mesh["Faces"].HasMember("_data"))
@@ -260,7 +239,6 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 		std::istringstream iss(mesh["Faces"]["_data"].GetString());
 		int i0, i1, i2;
 
-		// A mesh is composed of multiple triangles.
 		while (iss >> i0 >> i1 >> i2)
 		{
 			shapes->push_back(new triangle(calculator,
@@ -271,7 +249,6 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 		}
 	};
 
-	// --- Helper Lambda to process a single "Triangle" JSON object ---
 	auto processTriangle = [&](const rapidjson::Value &tri)
 	{
 		if (!tri.HasMember("Indices"))
@@ -282,15 +259,15 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 
 		if (iss >> i0 >> i1 >> i2)
 		{
-			shapes->push_back(new triangle(calculator,
-										   &vertices->at(i0 - 1),
-										   &vertices->at(i1 - 1),
-										   &vertices->at(i2 - 1),
-										   &materials->at(std::stoi(tri["Material"].GetString()) - 1)));
+			shapes->push_back(new triangle(
+				calculator,
+				&vertices->at(i0 - 1),
+				&vertices->at(i1 - 1),
+				&vertices->at(i2 - 1),
+				&materials->at(std::stoi(tri["Material"].GetString()) - 1)));
 		}
 	};
 
-	// --- Helper Lambda to process a single "Sphere" JSON object ---
 	auto processSphere = [&](const rapidjson::Value &sph)
 	{
 		if (!sph.HasMember("Center") || !sph.HasMember("Radius"))
@@ -300,12 +277,12 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 		float radius = std::stof(sph["Radius"].GetString());
 
 		shapes->push_back(new sphere(
+			calculator,
 			&vertices->at(center_idx - 1),
 			radius,
 			&materials->at(std::stoi(sph["Material"].GetString()) - 1)));
 	};
 
-	// --- Helper Lambda to process a single "Plane" JSON object ---
 	auto processPlane = [&](const rapidjson::Value &pl)
 	{
 		if (!pl.HasMember("Point") || !pl.HasMember("Normal"))
@@ -317,8 +294,6 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 		float nx, ny, nz;
 		iss >> nx >> ny >> nz;
 
-		// The plane's normal is defined by value, not by an index.
-		// We must allocate it on the heap, as the constructor takes a pointer.
 		vec3 *normal_vec = new vec3(nx, ny, nz);
 
 		shapes->push_back(new plane(
@@ -326,10 +301,6 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 			normal_vec,
 			&materials->at(std::stoi(pl["Material"].GetString()) - 1)));
 	};
-
-	// --- Main Parsing Logic ---
-	// For each shape type, check if it exists. If it's an array, loop through it.
-	// If it's a single object, process just that one.
 
 	if (objects.HasMember("Mesh"))
 	{
@@ -412,6 +383,13 @@ float parser::get_shadowrayepsilon()
 	return 1e-3f;
 }
 
+float parser::get_maxrecursiondepth()
+{
+	if (d["Scene"].HasMember("MaxRecursionDepth"))
+		return std::stof(d["Scene"]["MaxRecursionDepth"].GetString());
+	return 6;
+}
+
 vec3 parser::get_backgroundcolor()
 {
 	vec3 color;
@@ -449,7 +427,7 @@ std::vector<point_light> *parser::get_pointlights()
 	std::vector<point_light> *lights = new std::vector<point_light>();
 
 	if (!d["Scene"].HasMember("Lights") || !d["Scene"]["Lights"].HasMember("PointLight"))
-		return lights; // return empty if none
+		return lights;
 
 	const auto &plNode = d["Scene"]["Lights"]["PointLight"];
 

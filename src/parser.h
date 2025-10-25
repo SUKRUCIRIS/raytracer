@@ -19,6 +19,7 @@ public:
 	std::vector<shape *> *get_shapes(simd_vec3 &calculator, std::vector<vec3> *vertices, std::vector<material> *materials);
 	float get_intersectionepsilon();
 	float get_shadowrayepsilon();
+	float get_maxrecursiondepth();
 	vec3 get_backgroundcolor();
 	vec3 get_ambientlight();
 	std::vector<point_light> *get_pointlights();
