@@ -179,35 +179,43 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, const vec3 &ray_origin, const 
 		calculator.dot(ray_dir, normal, cosTheta);
 		cosTheta = fabsf(cosTheta);
 
+		float n = mat->RefractionIndex;
+		float k = mat->AbsorptionIndex;
+
+		float c = cosTheta;
+		float c2 = c * c;
+		float s2 = 1.0f - c2;
+
+		float n2 = n * n;
+		float k2 = k * k;
+		float n2_k2 = n2 - k2;
+		float n2k2_4 = 4.0f * n2 * k2;
+
+		float a2_b2 = sqrtf((n2_k2 - s2) * (n2_k2 - s2) + n2k2_4);
+		float a2 = 0.5f * (a2_b2 + n2_k2 - s2);
+		float a = sqrtf(a2);
+		float b2 = a2_b2 - a2;
+		float b = sqrtf(b2);
+
+		float Rs_num = a2_b2 + c2 - (2.0f * a * c);
+		float Rs_den = a2_b2 + c2 + (2.0f * a * c);
+		float Rs = (Rs_den == 0.0f) ? 1.0f : Rs_num / Rs_den;
+
+		float ac = a * c;
+		float bc = b * c;
+		float Rp_num_term1 = ac - s2;
+		float Rp_den_term1 = ac + s2;
+		float Rp_num = (Rp_num_term1 * Rp_num_term1) + (bc * bc);
+		float Rp_den = (Rp_den_term1 * Rp_den_term1) + (bc * bc);
+		float Rp = (Rp_den == 0.0f) ? 1.0f : Rs * (Rp_num / Rp_den);
+
+		float F_scalar = 0.5f * (Rs + Rp);
+		F_scalar = std::clamp(F_scalar, 0.0f, 1.0f);
+
+		vec3 F_vec(F_scalar, F_scalar, F_scalar);
+
 		vec3 F;
-		vec3 n(mat->RefractionIndex, mat->RefractionIndex, mat->RefractionIndex);
-		vec3 k(mat->AbsorptionIndex, mat->AbsorptionIndex, mat->AbsorptionIndex);
-
-		vec3 cosVec(cosTheta, cosTheta, cosTheta);
-
-		vec3 n2, k2;
-		calculator.mult(n, n, n2);
-		calculator.mult(k, k, k2);
-
-		vec3 temp1, temp2, num, den, Rs, Rp;
-		calculator.mult_scalar(n, 2.0f * cosTheta, temp1);
-		calculator.subs(n2, temp1, num);
-		calculator.add(num, k2, num);
-		vec3 cos2;
-		calculator.mult_scalar(cosVec, cosTheta, cos2);
-		calculator.add(num, cos2, num);
-
-		calculator.add(n2, k2, den);
-		calculator.add_scalar(den, 2.0f * n.get_x() * cosTheta, den);
-		calculator.add(den, cos2, den);
-		calculator.div(num, den, Rs);
-
-		Rp = Rs;
-
-		calculator.add(Rs, Rp, F);
-		calculator.mult_scalar(F, 0.5f, F);
-
-		calculator.mult(F, mat->MirrorReflectance, F);
+		calculator.mult(F_vec, mat->MirrorReflectance, F);
 
 		vec3 reflectedColor;
 		vec3 offset;
