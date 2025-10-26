@@ -44,6 +44,10 @@ int main(int argc, char **argv)
 
 	auto shapes = p.get_shapes(calculator, vertices, materials);
 
+	printf("Vertex count: %d\n", vertices->size());
+	printf("Shape count: %d\n", shapes->size());
+	printf("Camera count: %d\n", cameras->size());
+
 	float intersectionepsilon = p.get_intersectionepsilon();
 
 	float shadowrayepsilon = p.get_shadowrayepsilon();
@@ -64,27 +68,50 @@ int main(int argc, char **argv)
 	auto rt = new ray_tracer(shapes, intersectionepsilon, shadowrayepsilon, ambientlight,
 							 point_lights, backgroundcolor, maxdepth);
 
+	auto isalldone = [](bool *dones, int thread_count, bool &alldone)
+	{
+		alldone = true;
+		for (int i = 0; i < thread_count; i++)
+		{
+			if (dones[i] == false)
+			{
+				alldone = false;
+			}
+		}
+	};
 	for (auto &&camera : *cameras)
 	{
 		printf("%s started\n", camera.output.c_str());
 		start = std::chrono::high_resolution_clock::now();
 		unsigned char *output = new unsigned char[camera.resx * camera.resy * 3];
-		auto ray_thread = [rt, camera, output](int index_start, int index_end)
+		auto ray_thread = [rt, camera, output](int index_start, int index_end, bool *done, bool print)
 		{
 			simd_vec3 calculatorp;
 			for (size_t index = index_start; index < camera.ray_dirs.size() && index < index_end; index++)
 			{
 				rt->trace(calculatorp, camera.position, camera.ray_dirs.at(index), index, output);
+				if (print && index % 5000 == 0)
+				{
+					printf("Thread 0: %d/%d\n", index, index_end);
+				}
 			}
+			*done = true;
 		};
 		int index_count_per_thread = camera.ray_dirs.size() / thread_count;
 		index_count_per_thread++;
 		int index_start = 0;
 		std::thread *ths = new std::thread[thread_count];
+		bool *dones = new bool[thread_count];
+		bool alldone = false;
 		for (int i = 0; i < thread_count; i++)
 		{
-			ths[i] = std::thread(ray_thread, index_start, index_start + index_count_per_thread);
+			dones[i] = false;
+			ths[i] = std::thread(ray_thread, index_start, index_start + index_count_per_thread, &(dones[i]), i == 0);
 			index_start += index_count_per_thread;
+		}
+		while (!alldone)
+		{
+			isalldone(dones, thread_count, alldone);
 		}
 		for (int i = 0; i < thread_count; i++)
 		{

@@ -8,7 +8,10 @@ class parser
 {
 private:
 	rapidjson::Document d;
+	const char *file_name;
 	static char *get_json_content(const char *fileName);
+	static void load_ply(simd_vec3 &calculator, const std::string &filename,
+						 std::vector<vec3> *vertices, std::vector<shape *> *shapes, material *mat);
 
 public:
 	parser() = delete;

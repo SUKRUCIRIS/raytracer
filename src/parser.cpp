@@ -1,6 +1,8 @@
 #include "parser.h"
 #include <string>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 
 char *parser::get_json_content(const char *fileName)
 {
@@ -29,6 +31,100 @@ char *parser::get_json_content(const char *fileName)
 	return file;
 }
 
+static float read_float(std::ifstream &f)
+{
+	float v;
+	f.read(reinterpret_cast<char *>(&v), sizeof(float));
+	return v;
+}
+
+static uint32_t read_uint32(std::ifstream &f)
+{
+	uint32_t v;
+	f.read(reinterpret_cast<char *>(&v), sizeof(uint32_t));
+	return v;
+}
+
+static uint8_t read_uint8(std::ifstream &f)
+{
+	uint8_t v;
+	f.read(reinterpret_cast<char *>(&v), sizeof(uint8_t));
+	return v;
+}
+
+void parser::load_ply(simd_vec3 &calculator, const std::string &filename,
+					  std::vector<vec3> *vertices, std::vector<shape *> *shapes, material *mat)
+{
+	std::ifstream file(filename, std::ios::binary);
+	if (!file.is_open())
+	{
+		printf("Error: could not open PLY file %s\n", filename.c_str());
+		exit(-1);
+	}
+
+	std::string line;
+	int vertexCount = 0, faceCount = 0;
+
+	while (std::getline(file, line))
+	{
+		if (line.find("element vertex") == 0)
+		{
+			std::istringstream iss(line);
+			std::string tmp;
+			iss >> tmp >> tmp >> vertexCount;
+		}
+		else if (line.find("element face") == 0)
+		{
+			std::istringstream iss(line);
+			std::string tmp;
+			iss >> tmp >> tmp >> faceCount;
+		}
+		else if (line == "end_header")
+		{
+			break;
+		}
+	}
+
+	size_t startIndex = vertices->size();
+
+	for (int i = 0; i < vertexCount; i++)
+	{
+		float x = read_float(file);
+		float y = read_float(file);
+		float z = read_float(file);
+		vec3 v;
+		v.load(x, y, z);
+		vertices->push_back(v);
+	}
+
+	int triCount = 0;
+
+	for (int i = 0; i < faceCount; i++)
+	{
+		uint8_t n = read_uint8(file);
+		if (n == 3)
+		{
+			uint32_t a = read_uint32(file);
+			uint32_t b = read_uint32(file);
+			uint32_t c = read_uint32(file);
+			shapes->push_back(new triangle(
+				calculator,
+				&vertices->at(a + startIndex),
+				&vertices->at(b + startIndex),
+				&vertices->at(c + startIndex),
+				mat));
+			triCount++;
+		}
+		else
+		{
+			for (int j = 0; j < n; j++)
+			{
+				uint32_t dummy = read_uint32(file);
+			}
+		}
+	}
+}
+
 parser::parser(const char *file_name)
 {
 	d.Parse(get_json_content(file_name));
@@ -36,6 +132,7 @@ parser::parser(const char *file_name)
 	{
 		printf("%s parse error.\n", file_name);
 	}
+	this->file_name = file_name;
 }
 
 std::vector<camera> *parser::get_camera(simd_vec3 &calculator)
@@ -52,50 +149,86 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator)
 	auto parseCamera = [&](const rapidjson::Value &cam)
 	{
 		std::string tmp;
-		float position_x, position_y, position_z;
-		float gaze_x, gaze_y, gaze_z;
-		float up_x, up_y, up_z;
-		float nearp_left, nearp_right, nearp_bottom, nearp_top;
-		float neardistance;
-		int resx, resy;
 
-		tmp = cam["Position"].GetString();
-		sscanf(tmp.c_str(), "%f %f %f", &position_x, &position_y, &position_z);
+		std::string type = "pinhole";
+		if (cam.HasMember("_type"))
+			type = cam["_type"].GetString();
 
-		tmp = cam["Gaze"].GetString();
-		sscanf(tmp.c_str(), "%f %f %f", &gaze_x, &gaze_y, &gaze_z);
+		if (type == "lookAt")
+		{
+			float position_x, position_y, position_z;
+			float gaze_x, gaze_y, gaze_z;
+			float up_x, up_y, up_z;
+			float neardistance;
+			float fovY;
+			int resx, resy;
 
-		tmp = cam["Up"].GetString();
-		sscanf(tmp.c_str(), "%f %f %f", &up_x, &up_y, &up_z);
+			tmp = cam["Position"].GetString();
+			sscanf(tmp.c_str(), "%f %f %f", &position_x, &position_y, &position_z);
 
-		tmp = cam["NearPlane"].GetString();
-		sscanf(tmp.c_str(), "%f %f %f %f", &nearp_left, &nearp_right, &nearp_bottom, &nearp_top);
+			tmp = cam["GazePoint"].GetString();
+			sscanf(tmp.c_str(), "%f %f %f", &gaze_x, &gaze_y, &gaze_z);
 
-		tmp = cam["NearDistance"].GetString();
-		sscanf(tmp.c_str(), "%f", &neardistance);
+			tmp = cam["Up"].GetString();
+			sscanf(tmp.c_str(), "%f %f %f", &up_x, &up_y, &up_z);
 
-		tmp = cam["ImageResolution"].GetString();
-		sscanf(tmp.c_str(), "%d %d", &resx, &resy);
+			tmp = cam["FovY"].GetString();
+			sscanf(tmp.c_str(), "%f", &fovY);
 
-		tmp = cam["ImageName"].GetString();
+			tmp = cam["NearDistance"].GetString();
+			sscanf(tmp.c_str(), "%f", &neardistance);
 
-		res->emplace_back(calculator, position_x, position_y, position_z,
-						  gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
-						  neardistance, nearp_left, nearp_right, nearp_bottom, nearp_top,
-						  resx, resy, tmp);
+			tmp = cam["ImageResolution"].GetString();
+			sscanf(tmp.c_str(), "%d %d", &resx, &resy);
+
+			tmp = cam["ImageName"].GetString();
+
+			res->emplace_back(
+				calculator, position_x, position_y, position_z,
+				gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
+				neardistance, fovY, resx, resy, tmp);
+		}
+		else
+		{
+			float position_x, position_y, position_z;
+			float gaze_x, gaze_y, gaze_z;
+			float up_x, up_y, up_z;
+			float nearp_left, nearp_right, nearp_bottom, nearp_top;
+			float neardistance;
+			int resx, resy;
+
+			tmp = cam["Position"].GetString();
+			sscanf(tmp.c_str(), "%f %f %f", &position_x, &position_y, &position_z);
+
+			tmp = cam["Gaze"].GetString();
+			sscanf(tmp.c_str(), "%f %f %f", &gaze_x, &gaze_y, &gaze_z);
+
+			tmp = cam["Up"].GetString();
+			sscanf(tmp.c_str(), "%f %f %f", &up_x, &up_y, &up_z);
+
+			tmp = cam["NearPlane"].GetString();
+			sscanf(tmp.c_str(), "%f %f %f %f", &nearp_left, &nearp_right, &nearp_bottom, &nearp_top);
+
+			tmp = cam["NearDistance"].GetString();
+			sscanf(tmp.c_str(), "%f", &neardistance);
+
+			tmp = cam["ImageResolution"].GetString();
+			sscanf(tmp.c_str(), "%d %d", &resx, &resy);
+
+			tmp = cam["ImageName"].GetString();
+
+			res->emplace_back(calculator, position_x, position_y, position_z,
+							  gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
+							  neardistance, nearp_left, nearp_right, nearp_bottom, nearp_top,
+							  resx, resy, tmp);
+		}
 	};
 
 	if (camNode.IsObject())
-	{
 		parseCamera(camNode);
-	}
 	else if (camNode.IsArray())
-	{
 		for (auto &c : camNode.GetArray())
-		{
 			parseCamera(c);
-		}
-	}
 
 	return res;
 }
@@ -233,19 +366,32 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 
 	auto processMesh = [&](const rapidjson::Value &mesh)
 	{
-		if (!mesh.HasMember("Faces") || !mesh["Faces"].HasMember("_data"))
-			return;
-
-		std::istringstream iss(mesh["Faces"]["_data"].GetString());
-		int i0, i1, i2;
-
-		while (iss >> i0 >> i1 >> i2)
+		if (!mesh.HasMember("Faces") || !(mesh["Faces"].HasMember("_data") || mesh["Faces"].HasMember("_plyFile")))
 		{
-			shapes->push_back(new triangle(calculator,
-										   &vertices->at(i0 - 1),
-										   &vertices->at(i1 - 1),
-										   &vertices->at(i2 - 1),
-										   &materials->at(std::stoi(mesh["Material"].GetString()) - 1)));
+			return;
+		}
+
+		if (mesh["Faces"].HasMember("_plyFile"))
+		{
+			std::string plyName = mesh["Faces"]["_plyFile"].GetString();
+			std::filesystem::path baseDir = std::filesystem::path(this->file_name).parent_path();
+			std::filesystem::path fullPath = baseDir / plyName;
+			load_ply(calculator, fullPath.string(), vertices, shapes,
+					 &materials->at(std::stoi(mesh["Material"].GetString()) - 1));
+		}
+		else
+		{
+			std::istringstream iss(mesh["Faces"]["_data"].GetString());
+			int i0, i1, i2;
+
+			while (iss >> i0 >> i1 >> i2)
+			{
+				shapes->push_back(new triangle(calculator,
+											   &vertices->at(i0 - 1),
+											   &vertices->at(i1 - 1),
+											   &vertices->at(i2 - 1),
+											   &materials->at(std::stoi(mesh["Material"].GetString()) - 1)));
+			}
 		}
 	};
 

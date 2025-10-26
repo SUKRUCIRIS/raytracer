@@ -16,4 +16,10 @@ public:
 		   float up_x, float up_y, float up_z, float neardistance,
 		   float nearp_left, float nearp_right, float nearp_bottom, float nearp_top,
 		   int resx, int resy, std::string output);
+	camera(simd_vec3 &calculator,
+		   float position_x, float position_y, float position_z,
+		   float gaze_x, float gaze_y, float gaze_z,
+		   float up_x, float up_y, float up_z,
+		   float neardistance, float fovY,
+		   int resx, int resy, std::string output);
 };
