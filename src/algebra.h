@@ -1,6 +1,7 @@
 #pragma once
 #include <smmintrin.h> // SSE4.1
 #include <stdio.h>
+#include "helper.h"
 
 class simd_vec3;
 
@@ -9,7 +10,15 @@ struct alignas(16) vec3
 public:
 	friend class simd_vec3;
 	vec3() : vec(_mm_setzero_ps()) {};
+	vec3(float a) : x(a), y(a), z(a), vec(_mm_load_ps(&this->x)) {};
 	vec3(float a, float b, float c) : x(a), y(b), z(c), vec(_mm_load_ps(&this->x)) {};
+	void load(float a)
+	{
+		x = a;
+		y = a;
+		z = a;
+		vec = _mm_load_ps(&this->x);
+	}
 	void load(float a, float b, float c, float d = 0)
 	{
 		x = a;
@@ -27,7 +36,7 @@ public:
 	float get_z() const { return z; };
 	void print() const
 	{
-		printf("\nmem: %p x: %f y: %f z: %f\n", this, x, y, z);
+		my_printf("\nmem: %p x: %f y: %f z: %f\n", this, x, y, z);
 	}
 
 private:

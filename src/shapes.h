@@ -81,6 +81,13 @@ public:
 
 		calculator.max(*c1, *c2, edge1);
 		calculator.max(edge1, *c3, box.max);
+
+		const float aabb_pad = 1e-4f;
+		calculator.subs(box.min, vec3(aabb_pad), box.min);
+		calculator.add(box.max, vec3(aabb_pad), box.max);
+
+		box.min.store();
+		box.max.store();
 	};
 	virtual void get_normal(simd_vec3 &calculator, const vec3 &hit_point, vec3 &normal) const override { normal = this->normal; };
 	virtual bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
@@ -101,6 +108,13 @@ public:
 
 		calculator.subs(*center, rvec, box.min);
 		calculator.add(*center, rvec, box.max);
+
+		const float aabb_pad = 1e-4f;
+		calculator.subs(box.min, vec3(aabb_pad), box.min);
+		calculator.add(box.max, vec3(aabb_pad), box.max);
+
+		box.min.store();
+		box.max.store();
 	};
 	vec3 *get_center() const { return center; };
 	virtual bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling = true, const float EPSILON = 1e-6f) const override;

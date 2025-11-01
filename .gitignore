@@ -2,3 +2,4 @@ raytracer
 .vscode
 raytracer.exe
 *.png
+output.txt

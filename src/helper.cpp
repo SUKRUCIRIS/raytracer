@@ -1,0 +1,19 @@
+#include "helper.h"
+
+static FILE *file = fopen("output.txt", "w");
+
+void my_printf(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vprintf(fmt, args);
+	va_end(args);
+
+	va_start(args, fmt);
+	vfprintf(file, fmt, args);
+	va_end(args);
+
+	fflush(stdout);
+	fflush(file);
+}
