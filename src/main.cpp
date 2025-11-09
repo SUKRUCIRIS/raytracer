@@ -154,7 +154,7 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		my_printf("Error: %s is neither a .json file nor a directory.\n", input_path);
+		my_printf("Error: %s is neither a .json file nor a directory.\n", input_path.c_str());
 		return 1;
 	}
 
