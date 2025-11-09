@@ -24,7 +24,7 @@ private:
 
 	float get_t_max(float start, int cell_idx, int step, float cell_sz, float grid_min, float inv_dir) const;
 
-	bool intersect_ray_aabb(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t_min, const float EPS = 1e-6f) const;
+	bool intersect_ray_aabb(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t_min, float &t_max, const float EPS = 1e-6f) const;
 
 public:
 	grid() = delete;

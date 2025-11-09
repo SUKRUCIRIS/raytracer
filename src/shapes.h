@@ -59,33 +59,47 @@ public:
 	void getBoundingBox(aabb &box) const { box = this->box; };
 };
 
+#ifndef GEOMETRY_SCALE_FACTOR
+#define GEOMETRY_SCALE_FACTOR 1000.0f
+#define INV_GEOMETRY_SCALE_FACTOR (1.0f / GEOMETRY_SCALE_FACTOR)
+#endif
+
 class triangle : public shape
 {
 private:
 	vec3 *c1, *c2, *c3;
 	vec3 normal;
+	vec3 c1_scaled, c2_scaled, c3_scaled;
 
 public:
 	triangle() = delete;
 	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat)
 		: c1(c1), c2(c2), c3(c3), shape(mat, shape_type::Triangle)
 	{
-		vec3 edge1, edge2;
-		calculator.subs(*c2, *c1, edge1);
-		calculator.subs(*c3, *c1, edge2);
-		calculator.cross(edge1, edge2, normal);
+		calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
+		calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
+		calculator.mult_scalar(*c3, GEOMETRY_SCALE_FACTOR, c3_scaled);
+
+		vec3 edge1_scaled, edge2_scaled;
+
+		calculator.subs(c2_scaled, c1_scaled, edge1_scaled);
+		calculator.subs(c3_scaled, c1_scaled, edge2_scaled);
+
+		calculator.cross(edge1_scaled, edge2_scaled, normal);
+
 		calculator.normalize(normal, normal);
 
-		calculator.min(*c1, *c2, edge1);
-		calculator.min(edge1, *c3, box.min);
+		calculator.min(*c1, *c2, edge1_scaled);
+		calculator.min(edge1_scaled, *c3, box.min);
 
-		calculator.max(*c1, *c2, edge1);
-		calculator.max(edge1, *c3, box.max);
+		calculator.max(*c1, *c2, edge1_scaled);
+		calculator.max(edge1_scaled, *c3, box.max);
 
 		const float aabb_pad = 1e-4f;
 		calculator.subs(box.min, vec3(aabb_pad), box.min);
 		calculator.add(box.max, vec3(aabb_pad), box.max);
 
+		normal.store();
 		box.min.store();
 		box.max.store();
 	};
@@ -122,6 +136,7 @@ public:
 	{
 		calculator.subs(hit_point, *center, normal);
 		calculator.normalize(normal, normal);
+		normal.store();
 	};
 };
 

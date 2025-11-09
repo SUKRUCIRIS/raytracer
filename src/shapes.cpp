@@ -3,11 +3,16 @@
 
 bool triangle::intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
 {
-	vec3 edge1, edge2, h, s, q;
-	calculator.subs(*c2, *c1, edge1);
-	calculator.subs(*c3, *c1, edge2);
+	vec3 rayOrigin_scaled;
+	calculator.mult_scalar(rayOrigin, GEOMETRY_SCALE_FACTOR, rayOrigin_scaled);
 
-	calculator.cross(rayDir, edge2, h);
+	const vec3 &rayDir_scaled = rayDir;
+
+	vec3 edge1, edge2, h, s, q;
+	calculator.subs(c2_scaled, c1_scaled, edge1);
+	calculator.subs(c3_scaled, c1_scaled, edge2);
+
+	calculator.cross(rayDir_scaled, edge2, h);
 
 	float a;
 	calculator.dot(edge1, h, a);
@@ -25,24 +30,26 @@ bool triangle::intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec
 
 	float f = 1.0f / a;
 
-	calculator.subs(rayOrigin, *c1, s);
+	calculator.subs(rayOrigin_scaled, c1_scaled, s);
 
 	float u;
 	calculator.dot(s, h, u);
 	u *= f;
-	if (u < 0.0f || u > 1.0f)
+	if (u < (0.0f - EPSILON) || u > (1.0f + EPSILON))
 		return false;
 
 	calculator.cross(s, edge1, q);
 
 	float v;
-	calculator.dot(rayDir, q, v);
+	calculator.dot(rayDir_scaled, q, v);
 	v *= f;
-	if (v < 0.0f || u + v > 1.0f)
+	if (v < (0.0f - EPSILON) || (u + v) > (1.0f + EPSILON))
 		return false;
 
 	calculator.dot(edge2, q, t);
 	t *= f;
+
+	t *= INV_GEOMETRY_SCALE_FACTOR;
 
 	return t > EPSILON;
 }

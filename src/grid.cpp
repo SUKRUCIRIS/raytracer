@@ -1,4 +1,4 @@
-#include "Grid.h"
+#include "grid.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -151,20 +151,25 @@ float grid::get_t_max(float start, int cell_idx, int step, float cell_sz, float 
 	}
 }
 
-bool grid::intersect_ray_aabb(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t_min, const float EPS) const
+bool grid::intersect_ray_aabb(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir,
+							  float &t_min, float &t_max, const float EPS) const
 {
+	vec3 bounds_min_scaled, bounds_max_scaled, ro_scaled;
+	calculator.mult_scalar(bounds.min, GEOMETRY_SCALE_FACTOR, bounds_min_scaled);
+	calculator.mult_scalar(bounds.max, GEOMETRY_SCALE_FACTOR, bounds_max_scaled);
+	calculator.mult_scalar(rayOrigin, GEOMETRY_SCALE_FACTOR, ro_scaled);
+
 	vec3 invDir;
-	vec3 one(1.0f, 1.0f, 1.0f);
+	vec3 one(1.0f);
 	calculator.div(one, rayDir, invDir);
 
 	vec3 t_min_vec, t_max_vec;
-	vec3 ro = rayOrigin;
 	vec3 t1, t2;
 
-	calculator.subs(bounds.min, ro, t1);
+	calculator.subs(bounds_min_scaled, ro_scaled, t1);
 	calculator.mult(t1, invDir, t1);
 
-	calculator.subs(bounds.max, ro, t2);
+	calculator.subs(bounds_max_scaled, ro_scaled, t2);
 	calculator.mult(t2, invDir, t2);
 
 	calculator.min(t1, t2, t_min_vec);
@@ -176,12 +181,14 @@ bool grid::intersect_ray_aabb(simd_vec3 &calculator, const vec3 &rayOrigin, cons
 	t_max_vec.store();
 	float tmax = std::min(std::min(t_max_vec.get_x(), t_max_vec.get_y()), t_max_vec.get_z());
 
-	if (tmin > tmax)
+	if (tmin > tmax + EPS)
 	{
 		return false;
 	}
 
-	t_min = tmin;
+	t_min = tmin * INV_GEOMETRY_SCALE_FACTOR;
+	t_max = tmax * INV_GEOMETRY_SCALE_FACTOR;
+
 	return true;
 }
 
@@ -204,61 +211,12 @@ bool grid::intersect(simd_vec3 &calculator,
 	vec3 rd = rayDir;
 	rd.store();
 
-	float t_entry;
-	if (!intersect_ray_aabb(calculator, ro, rd, t_entry, EPSILON))
+	float tmin_box = 0;
+	float tmax_box = 0;
+
+	if (!intersect_ray_aabb(calculator, ro, rd, tmin_box, tmax_box, EPSILON))
 	{
 		return false;
-	}
-
-	float tmin_box = -std::numeric_limits<float>::infinity();
-	float tmax_box = std::numeric_limits<float>::infinity();
-
-	{
-		float origin = ro.get_x();
-		float dir = rd.get_x();
-		float invd = (std::fabs(dir) < EPSILON) ? std::numeric_limits<float>::infinity() : 1.0f / dir;
-		float t1 = (bounds.min.get_x() - origin) * invd;
-		float t2 = (bounds.max.get_x() - origin) * invd;
-		if (t1 > t2)
-			std::swap(t1, t2);
-		if (t1 > tmin_box)
-			tmin_box = t1;
-		if (t2 < tmax_box)
-			tmax_box = t2;
-		if (tmin_box > tmax_box)
-			return false;
-	}
-
-	{
-		float origin = ro.get_y();
-		float dir = rd.get_y();
-		float invd = (std::fabs(dir) < EPSILON) ? std::numeric_limits<float>::infinity() : 1.0f / dir;
-		float t1 = (bounds.min.get_y() - origin) * invd;
-		float t2 = (bounds.max.get_y() - origin) * invd;
-		if (t1 > t2)
-			std::swap(t1, t2);
-		if (t1 > tmin_box)
-			tmin_box = t1;
-		if (t2 < tmax_box)
-			tmax_box = t2;
-		if (tmin_box > tmax_box)
-			return false;
-	}
-
-	{
-		float origin = ro.get_z();
-		float dir = rd.get_z();
-		float invd = (std::fabs(dir) < EPSILON) ? std::numeric_limits<float>::infinity() : 1.0f / dir;
-		float t1 = (bounds.min.get_z() - origin) * invd;
-		float t2 = (bounds.max.get_z() - origin) * invd;
-		if (t1 > t2)
-			std::swap(t1, t2);
-		if (t1 > tmin_box)
-			tmin_box = t1;
-		if (t2 < tmax_box)
-			tmax_box = t2;
-		if (tmin_box > tmax_box)
-			return false;
 	}
 
 	float t = std::max(tmin_box, 0.0f);
@@ -338,31 +296,20 @@ bool grid::intersect(simd_vec3 &calculator,
 			return true;
 		}
 
-		if (tMaxX < tMaxY)
+		if (tMaxX <= tMaxY && tMaxX <= tMaxZ)
 		{
-			if (tMaxX < tMaxZ)
-			{
-				ix += stepX;
-				tMaxX += tDeltaX;
-			}
-			else
-			{
-				iz += stepZ;
-				tMaxZ += tDeltaZ;
-			}
+			ix += stepX;
+			tMaxX += tDeltaX;
+		}
+		else if (tMaxY <= tMaxZ)
+		{
+			iy += stepY;
+			tMaxY += tDeltaY;
 		}
 		else
 		{
-			if (tMaxY < tMaxZ)
-			{
-				iy += stepY;
-				tMaxY += tDeltaY;
-			}
-			else
-			{
-				iz += stepZ;
-				tMaxZ += tDeltaZ;
-			}
+			iz += stepZ;
+			tMaxZ += tDeltaZ;
 		}
 
 		if (earliestNextT > tmax_box)

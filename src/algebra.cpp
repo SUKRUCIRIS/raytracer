@@ -34,14 +34,12 @@ void simd_vec3::dot(const vec3 &a, const vec3 &b, float &c)
 }
 void simd_vec3::cross(const vec3 &a, const vec3 &b, vec3 &c)
 {
-	d = _mm_shuffle_ps(a.vec, a.vec, _MM_SHUFFLE(3, 0, 2, 1));
-	d1 = _mm_shuffle_ps(b.vec, b.vec, _MM_SHUFFLE(3, 0, 2, 1));
+	d = _mm_mul_ps(_mm_shuffle_ps(a.vec, a.vec, _MM_SHUFFLE(3, 0, 2, 1)),
+				   _mm_shuffle_ps(b.vec, b.vec, _MM_SHUFFLE(3, 1, 0, 2)));
+	d1 = _mm_mul_ps(_mm_shuffle_ps(a.vec, a.vec, _MM_SHUFFLE(3, 1, 0, 2)),
+					_mm_shuffle_ps(b.vec, b.vec, _MM_SHUFFLE(3, 0, 2, 1)));
 
-	d2 = _mm_mul_ps(d, b.vec);
-	d = _mm_mul_ps(a.vec, d1);
-	d1 = _mm_sub_ps(d, d2);
-
-	c.vec = _mm_shuffle_ps(d1, d1, _MM_SHUFFLE(3, 0, 2, 1));
+	c.vec = _mm_sub_ps(d, d1);
 }
 void simd_vec3::length_squared(const vec3 &a, float &c)
 {
@@ -50,14 +48,12 @@ void simd_vec3::length_squared(const vec3 &a, float &c)
 }
 void simd_vec3::normalize(const vec3 &a, vec3 &c)
 {
-	d = _mm_dp_ps(a.vec, a.vec, 0xFF);
-	d1 = _mm_sqrt_ps(d);
-
+	d = _mm_dp_ps(a.vec, a.vec, 0x77);
 	d2 = _mm_set_ps1(1e-12f);
-	d = _mm_cmpgt_ps(d1, d2);
-	d1 = _mm_blendv_ps(_mm_set_ps1(1.0f), d1, d);
-
-	c.vec = _mm_div_ps(a.vec, d1);
+	d1 = _mm_cmpgt_ps(d, d2);
+	d = _mm_rsqrt_ps(d);
+	d = _mm_and_ps(d, d1);
+	c.vec = _mm_mul_ps(a.vec, d);
 }
 
 void simd_vec3::max(const vec3 &a, const vec3 &b, vec3 &c)
