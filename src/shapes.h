@@ -71,10 +71,13 @@ private:
 	vec3 normal;
 	vec3 c1_scaled, c2_scaled, c3_scaled;
 
+	bool smooth = false;
+	vec3 n1, n2, n3;
+
 public:
 	triangle() = delete;
 	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat)
-		: c1(c1), c2(c2), c3(c3), shape(mat, shape_type::Triangle)
+		: c1(c1), c2(c2), c3(c3), shape(mat, shape_type::Triangle), smooth(false)
 	{
 		calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 		calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -89,11 +92,11 @@ public:
 
 		calculator.normalize(normal, normal);
 
-		calculator.min(*c1, *c2, edge1_scaled);
-		calculator.min(edge1_scaled, *c3, box.min);
+		calculator.min(*c1, *c2, box.min);
+		calculator.min(box.min, *c3, box.min);
 
-		calculator.max(*c1, *c2, edge1_scaled);
-		calculator.max(edge1_scaled, *c3, box.max);
+		calculator.max(*c1, *c2, box.max);
+		calculator.max(box.max, *c3, box.max);
 
 		const float aabb_pad = 1e-4f;
 		calculator.subs(box.min, vec3(aabb_pad), box.min);
@@ -103,7 +106,66 @@ public:
 		box.min.store();
 		box.max.store();
 	};
-	virtual void get_normal(simd_vec3 &calculator, const vec3 &hit_point, vec3 &normal) const override { normal = this->normal; };
+	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3,
+			 const vec3 &n1, const vec3 &n2, const vec3 &n3,
+			 material *mat)
+		: c1(c1), c2(c2), c3(c3), n1(n1), n2(n2), n3(n3),
+		  shape(mat, shape_type::Triangle), smooth(true)
+	{
+		calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
+		calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
+		calculator.mult_scalar(*c3, GEOMETRY_SCALE_FACTOR, c3_scaled);
+
+		calculator.min(*c1, *c2, box.min);
+		calculator.min(box.min, *c3, box.min);
+		calculator.max(*c1, *c2, box.max);
+		calculator.max(box.max, *c3, box.max);
+		const float pad = 1e-4f;
+		calculator.subs(box.min, vec3(pad), box.min);
+		calculator.add(box.max, vec3(pad), box.max);
+
+		this->n1.store();
+		this->n2.store();
+		this->n3.store();
+		box.min.store();
+		box.max.store();
+	}
+	virtual void get_normal(simd_vec3 &calculator, const vec3 &hit_point, vec3 &normal)
+		const override
+	{
+		if (!smooth)
+		{
+			normal = this->normal;
+			return;
+		}
+
+		vec3 v0, v1, v2;
+		calculator.subs(*c2, *c1, v0);
+		calculator.subs(*c3, *c1, v1);
+		calculator.subs(hit_point, *c1, v2);
+
+		float d00, d01, d11, d20, d21;
+		calculator.dot(v0, v0, d00);
+		calculator.dot(v0, v1, d01);
+		calculator.dot(v1, v1, d11);
+		calculator.dot(v2, v0, d20);
+		calculator.dot(v2, v1, d21);
+
+		const float denom = d00 * d11 - d01 * d01;
+		float v = (d11 * d20 - d01 * d21) / denom;
+		float w = (d00 * d21 - d01 * d20) / denom;
+		float u = 1.0f - v - w;
+
+		vec3 n_interp;
+		vec3 t1, t2;
+		calculator.mult_scalar(n1, u, n_interp);
+		calculator.mult_scalar(n2, v, t1);
+		calculator.add(n_interp, t1, n_interp);
+		calculator.mult_scalar(n3, w, t2);
+		calculator.add(n_interp, t2, n_interp);
+		calculator.normalize(n_interp, normal);
+		normal.store();
+	};
 	virtual bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
 };
 

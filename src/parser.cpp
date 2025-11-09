@@ -5,6 +5,7 @@
 #include <filesystem>
 #include "helper.h"
 #include <algorithm>
+#include <array>
 
 char *parser::get_json_content(const char *fileName)
 {
@@ -838,6 +839,10 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 			return;
 		}
 
+		std::string shadingMode = "flat";
+		if (mesh.HasMember("_shadingMode"))
+			shadingMode = mesh["_shadingMode"].GetString();
+
 		if (mesh["Faces"].HasMember("_plyFile"))
 		{
 			std::string plyName = mesh["Faces"]["_plyFile"].GetString();
@@ -846,19 +851,61 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 			load_ply(calculator, fullPath.string(), vertices, shapes,
 					 &materials->at(std::stoi(mesh["Material"].GetString()) - 1));
 		}
-		else
+		std::istringstream iss(mesh["Faces"]["_data"].GetString());
+		long long i0, i1, i2;
+		std::vector<std::array<size_t, 3>> tris;
+		while (iss >> i0 >> i1 >> i2)
 		{
-			std::istringstream iss(mesh["Faces"]["_data"].GetString());
-			long long i0, i1, i2;
+			tris.emplace_back(std::array<size_t, 3>{
+				static_cast<size_t>(i0 - 1),
+				static_cast<size_t>(i1 - 1),
+				static_cast<size_t>(i2 - 1)});
+		}
 
-			while (iss >> i0 >> i1 >> i2)
+		material &mat = materials->at(std::stoi(mesh["Material"].GetString()) - 1);
+
+		if (shadingMode == "smooth")
+		{
+			std::vector<vec3> vertex_normals(vertices->size(), vec3(0.0f, 0.0f, 0.0f));
+
+			for (auto &tri : tris)
+			{
+				vec3 e1, e2, n;
+				calculator.subs(vertices->at(tri[1]), vertices->at(tri[0]), e1);
+				calculator.subs(vertices->at(tri[2]), vertices->at(tri[0]), e2);
+				calculator.cross(e1, e2, n);
+
+				calculator.add(vertex_normals[tri[0]], n, vertex_normals[tri[0]]);
+				calculator.add(vertex_normals[tri[1]], n, vertex_normals[tri[1]]);
+				calculator.add(vertex_normals[tri[2]], n, vertex_normals[tri[2]]);
+			}
+
+			for (auto &vn : vertex_normals)
+				calculator.normalize(vn, vn);
+
+			for (auto &tri : tris)
 			{
 				shapes->push_back(new triangle(
 					calculator,
-					&vertices->at(static_cast<size_t>(i0 - 1)),
-					&vertices->at(static_cast<size_t>(i1 - 1)),
-					&vertices->at(static_cast<size_t>(i2 - 1)),
-					&materials->at(std::stoi(mesh["Material"].GetString()) - 1)));
+					&vertices->at(tri[0]),
+					&vertices->at(tri[1]),
+					&vertices->at(tri[2]),
+					vertex_normals[tri[0]],
+					vertex_normals[tri[1]],
+					vertex_normals[tri[2]],
+					&mat));
+			}
+		}
+		else
+		{
+			for (auto &tri : tris)
+			{
+				shapes->push_back(new triangle(
+					calculator,
+					&vertices->at(tri[0]),
+					&vertices->at(tri[1]),
+					&vertices->at(tri[2]),
+					&mat));
 			}
 		}
 	};
