@@ -69,8 +69,10 @@ private:
 	vec3 row0, row1, row2, row3;
 
 public:
-	mat4() {};
-	// row major
+	mat4() : row0(1.0f, 0.0f, 0.0f, 0.0f),
+			 row1(0.0f, 1.0f, 0.0f, 0.0f),
+			 row2(0.0f, 0.0f, 1.0f, 0.0f),
+			 row3(0.0f, 0.0f, 0.0f, 1.0f) {};
 	mat4(float a[16]) : row0(a[0], a[1], a[2], a[3]), row1(a[4], a[5], a[6], a[7]),
 						row2(a[8], a[9], a[10], a[11]), row3(a[12], a[13], a[14], a[15]) {};
 	mat4(vec3 &row0, vec3 &row1, vec3 &row2, vec3 &row3) : row0(row0), row1(row1), row2(row2), row3(row3) {};
@@ -88,6 +90,7 @@ public:
 	void scale(vec3 &s, mat4 &d);
 	void mult(const mat4 &a, const mat4 &b, mat4 &d);
 	void transpose(const mat4 &a, mat4 &d);
+	void inverse(const mat4 &a, mat4 &d);
 	void mult_vec(const mat4 &m, vec3 &v, vec3 &d);
 };
 

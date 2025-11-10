@@ -21,10 +21,11 @@ public:
 	{
 		free(json_content);
 	}
+	transformations *get_transformations(simd_mat4 &calculator);
 	std::vector<camera> *get_camera(simd_vec3 &calculator);
 	std::vector<vec3> *get_vertices();
 	std::vector<material> *get_materials();
-	std::vector<shape *> *get_shapes(simd_vec3 &calculator, std::vector<vec3> *vertices, std::vector<material> *materials);
+	std::vector<shape *> *get_shapes(simd_vec3 &calculator, std::vector<vec3> *vertices, std::vector<material> *materials, transformations *t, std::vector<mesh_info *> *m);
 	float get_intersectionepsilon();
 	float get_shadowrayepsilon();
 	float get_maxrecursiondepth();

@@ -22,6 +22,22 @@ enum material_type
 	Dielectric
 };
 
+struct transformations
+{
+	std::vector<mat4> translations;
+	std::vector<mat4> rotations;
+	std::vector<mat4> scales;
+};
+
+// if not mesh id shall be -100 and only use model and normal
+struct mesh_info
+{
+	int id;
+	std::vector<mat4> models;
+	std::vector<mat4> normals;
+	std::vector<material *> mats;
+};
+
 struct material
 {
 	material_type mt = Regular;
@@ -73,11 +89,12 @@ private:
 
 	bool smooth = false;
 	vec3 n1, n2, n3;
+	mesh_info *m = 0;
 
 public:
 	triangle() = delete;
-	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat)
-		: c1(c1), c2(c2), c3(c3), shape(mat, shape_type::Triangle), smooth(false)
+	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat, mesh_info *m)
+		: c1(c1), c2(c2), c3(c3), shape(mat, shape_type::Triangle), smooth(false), m(m)
 	{
 		calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 		calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -108,9 +125,9 @@ public:
 	};
 	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3,
 			 const vec3 &n1, const vec3 &n2, const vec3 &n3,
-			 material *mat)
+			 material *mat, mesh_info *m)
 		: c1(c1), c2(c2), c3(c3), n1(n1), n2(n2), n3(n3),
-		  shape(mat, shape_type::Triangle), smooth(true)
+		  shape(mat, shape_type::Triangle), smooth(true), m(m)
 	{
 		calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 		calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -175,6 +192,9 @@ private:
 	vec3 *center;
 	float radius;
 
+	mat4 model;
+	mat4 normal;
+
 public:
 	sphere() = delete;
 	sphere(simd_vec3 &calculator, vec3 *center, float radius, material *mat)
@@ -207,6 +227,9 @@ class plane : public shape
 private:
 	vec3 *point;
 	vec3 *normal;
+
+	mat4 model;
+	mat4 normal;
 
 public:
 	plane() = delete;

@@ -228,3 +228,88 @@ void simd_mat4::mult_vec(const mat4 &m, vec3 &v, vec3 &d)
 
 	d.set(&res);
 }
+
+void simd_mat4::inverse(const mat4 &a, mat4 &d)
+{
+	__m128 r0 = a.row0.get_vec();
+	__m128 r1 = a.row1.get_vec();
+	__m128 r2 = a.row2.get_vec();
+	__m128 r3 = a.row3.get_vec();
+
+	__m128 v0, v1, v2, v3;
+	__m128 t0, t1, t2, t3;
+	__m128 det_inv;
+
+	t0 = _mm_unpacklo_ps(r0, r1);
+	t1 = _mm_unpacklo_ps(r2, r3);
+	t2 = _mm_unpackhi_ps(r0, r1);
+	t3 = _mm_unpackhi_ps(r2, r3);
+
+	v0 = _mm_movelh_ps(t0, t1);
+	v1 = _mm_movehl_ps(t1, t0);
+	v2 = _mm_movelh_ps(t2, t3);
+	v3 = _mm_movehl_ps(t3, t2);
+
+	t0 = _mm_sub_ps(_mm_mul_ps(v2, _mm_shuffle_ps(v3, v3, _MM_SHUFFLE(3, 2, 3, 2))),
+					_mm_mul_ps(_mm_shuffle_ps(v2, v2, _MM_SHUFFLE(3, 2, 3, 2)), v3));
+	t1 = _mm_sub_ps(_mm_mul_ps(v1, _mm_shuffle_ps(v3, v3, _MM_SHUFFLE(3, 2, 3, 2))),
+					_mm_mul_ps(_mm_shuffle_ps(v1, v1, _MM_SHUFFLE(3, 2, 3, 2)), v3));
+	t2 = _mm_sub_ps(_mm_mul_ps(v1, _mm_shuffle_ps(v2, v2, _MM_SHUFFLE(3, 2, 3, 2))),
+					_mm_mul_ps(_mm_shuffle_ps(v1, v1, _MM_SHUFFLE(3, 2, 3, 2)), v2));
+
+	r0 = _mm_add_ps(_mm_sub_ps(_mm_mul_ps(_mm_shuffle_ps(v1, v1, _MM_SHUFFLE(1, 1, 0, 0)),
+										  _mm_shuffle_ps(t0, t0, _MM_SHUFFLE(0, 3, 2, 1))),
+							   _mm_mul_ps(_mm_shuffle_ps(v1, v1, _MM_SHUFFLE(2, 2, 2, 1)),
+										  _mm_shuffle_ps(t0, t0, _MM_SHUFFLE(1, 0, 2, 1)))),
+					_mm_mul_ps(_mm_shuffle_ps(v1, v1, _MM_SHUFFLE(3, 3, 3, 2)),
+							   _mm_shuffle_ps(t0, t0, _MM_SHUFFLE(1, 0, 3, 3))));
+
+	r1 = _mm_sub_ps(_mm_sub_ps(_mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(1, 1, 0, 0)),
+										  _mm_shuffle_ps(t0, t0, _MM_SHUFFLE(0, 3, 2, 1))),
+							   _mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(2, 2, 2, 1)),
+										  _mm_shuffle_ps(t0, t0, _MM_SHUFFLE(1, 0, 2, 1)))),
+					_mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(3, 3, 3, 2)),
+							   _mm_shuffle_ps(t0, t0, _MM_SHUFFLE(1, 0, 3, 3))));
+
+	r2 = _mm_add_ps(_mm_sub_ps(_mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(1, 1, 0, 0)),
+										  _mm_shuffle_ps(t1, t1, _MM_SHUFFLE(0, 3, 2, 1))),
+							   _mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(2, 2, 2, 1)),
+										  _mm_shuffle_ps(t1, t1, _MM_SHUFFLE(1, 0, 2, 1)))),
+					_mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(3, 3, 3, 2)),
+							   _mm_shuffle_ps(t1, t1, _MM_SHUFFLE(1, 0, 3, 3))));
+
+	r3 = _mm_sub_ps(_mm_sub_ps(_mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(1, 1, 0, 0)),
+										  _mm_shuffle_ps(t2, t2, _MM_SHUFFLE(0, 3, 2, 1))),
+							   _mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(2, 2, 2, 1)),
+										  _mm_shuffle_ps(t2, t2, _MM_SHUFFLE(1, 0, 2, 1)))),
+					_mm_mul_ps(_mm_shuffle_ps(v0, v0, _MM_SHUFFLE(3, 3, 3, 2)),
+							   _mm_shuffle_ps(t2, t2, _MM_SHUFFLE(1, 0, 3, 3))));
+
+	det_inv = _mm_dp_ps(v0, r0, 0xF1);
+
+	if (fabs(_mm_cvtss_f32(det_inv)) < 1e-12f)
+	{
+		d.row0.load(1.0f, 0.0f, 0.0f, 0.0f);
+		d.row1.load(0.0f, 1.0f, 0.0f, 0.0f);
+		d.row2.load(0.0f, 0.0f, 1.0f, 0.0f);
+		d.row3.load(0.0f, 0.0f, 0.0f, 1.0f);
+		return;
+	}
+
+	det_inv = _mm_rcp_ps(det_inv);
+
+	v0 = _mm_mul_ps(r0, det_inv);
+	v1 = _mm_mul_ps(r1, det_inv);
+	v2 = _mm_mul_ps(r2, det_inv);
+	v3 = _mm_mul_ps(r3, det_inv);
+
+	t0 = _mm_unpacklo_ps(v0, v1);
+	t1 = _mm_unpacklo_ps(v2, v3);
+	t2 = _mm_unpackhi_ps(v0, v1);
+	t3 = _mm_unpackhi_ps(v2, v3);
+
+	d.row0.set(_mm_movelh_ps(t0, t1));
+	d.row1.set(_mm_movehl_ps(t1, t0));
+	d.row2.set(_mm_movelh_ps(t2, t3));
+	d.row3.set(_mm_movehl_ps(t3, t2));
+}

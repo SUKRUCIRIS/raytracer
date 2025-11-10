@@ -18,6 +18,9 @@ void process_file(const char *filename, int thread_count)
 	parser p(filename);
 
 	simd_vec3 calculator;
+	simd_mat4 mat_calc(calculator);
+
+	auto transformations = p.get_transformations(mat_calc);
 
 	auto cameras = p.get_camera(calculator);
 
