@@ -1,7 +1,7 @@
 #include "shapes.h"
 #include <math.h>
 
-bool triangle::intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
+bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
 {
 	vec3 rayOrigin_scaled;
 	calculator.mult_scalar(rayOrigin, GEOMETRY_SCALE_FACTOR, rayOrigin_scaled);
@@ -54,10 +54,10 @@ bool triangle::intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec
 	return t > EPSILON;
 }
 
-bool sphere::intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
+bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
 {
 	vec3 oc;
-	calculator.subs(rayOrigin, *center, oc);
+	calculator.subs(rayOrigin, center, oc);
 
 	float b;
 	calculator.dot(oc, rayDir, b);
@@ -87,19 +87,19 @@ bool sphere::intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 
 	return true;
 }
 
-bool plane::intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
+bool plane::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
 {
 	float denom;
-	calculator.dot(*normal, rayDir, denom);
+	calculator.dot(normal, rayDir, denom);
 
 	if (fabs(denom) < EPSILON)
 		return false;
 
 	vec3 p0l0;
-	calculator.subs(*point, rayOrigin, p0l0);
+	calculator.subs(point, rayOrigin, p0l0);
 
 	float num;
-	calculator.dot(p0l0, *normal, num);
+	calculator.dot(p0l0, normal, num);
 
 	t = num / denom;
 

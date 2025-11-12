@@ -49,9 +49,10 @@ public:
 	float get_y() const { return y; };
 	float get_z() const { return z; };
 	__m128 get_vec() const { return vec; };
-	void print() const
+	void print()
 	{
-		my_printf("\nmem: %p x: %f y: %f z: %f\n", this, x, y, z);
+		store();
+		my_printf("\nx: %f y: %f z: %f p:%f\n", x, y, z, padding);
 	}
 
 private:
@@ -76,6 +77,18 @@ public:
 	mat4(float a[16]) : row0(a[0], a[1], a[2], a[3]), row1(a[4], a[5], a[6], a[7]),
 						row2(a[8], a[9], a[10], a[11]), row3(a[12], a[13], a[14], a[15]) {};
 	mat4(vec3 &row0, vec3 &row1, vec3 &row2, vec3 &row3) : row0(row0), row1(row1), row2(row2), row3(row3) {};
+	void print()
+	{
+		row0.store();
+		row1.store();
+		row2.store();
+		row3.store();
+		my_printf("Mat4:\n");
+		row0.print();
+		row1.print();
+		row2.print();
+		row3.print();
+	}
 };
 
 class simd_mat4
@@ -91,7 +104,7 @@ public:
 	void mult(const mat4 &a, const mat4 &b, mat4 &d);
 	void transpose(const mat4 &a, mat4 &d);
 	void inverse(const mat4 &a, mat4 &d);
-	void mult_vec(const mat4 &m, vec3 &v, vec3 &d);
+	void mult_vec(const mat4 &m, vec3 &v, vec3 &d, bool is_dir);
 };
 
 class simd_vec3

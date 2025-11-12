@@ -1,6 +1,8 @@
 #pragma once
 #include "algebra.h"
 #include <cfloat>
+#include <vector>
+#include <unordered_map>
 
 struct aabb
 {
@@ -29,15 +31,6 @@ struct transformations
 	std::vector<mat4> scales;
 };
 
-// if not mesh id shall be -100 and only use model and normal
-struct mesh_info
-{
-	int id;
-	std::vector<mat4> models;
-	std::vector<mat4> normals;
-	std::vector<material *> mats;
-};
-
 struct material
 {
 	material_type mt = Regular;
@@ -58,6 +51,19 @@ enum shape_type
 	Plane
 };
 
+struct mesh_info
+{
+	mat4 model;
+	mat4 inv_model;
+	mat4 normal;
+	material *mat;
+};
+
+struct all_mesh_infos
+{
+	std::unordered_map<int, mesh_info> mesh_infos;
+};
+
 class shape
 {
 protected:
@@ -70,7 +76,8 @@ protected:
 public:
 	material *getMaterial() const { return mat; };
 	shape_type get_shapetype() const { return t; };
-	virtual bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling = true, const float EPSILON = 1e-6f) const = 0;
+	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+						   float &t, bool culling = true, const float EPSILON = 1e-6f) const = 0;
 	virtual void get_normal(simd_vec3 &calculator, const vec3 &hit_point, vec3 &normal) const = 0;
 	void getBoundingBox(aabb &box) const { box = this->box; };
 };
@@ -83,18 +90,18 @@ public:
 class triangle : public shape
 {
 private:
-	vec3 *c1, *c2, *c3;
+	vec3 c1, c2, c3;
 	vec3 normal;
 	vec3 c1_scaled, c2_scaled, c3_scaled;
 
 	bool smooth = false;
 	vec3 n1, n2, n3;
-	mesh_info *m = 0;
+	all_mesh_infos *m = 0;
 
 public:
 	triangle() = delete;
-	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat, mesh_info *m)
-		: c1(c1), c2(c2), c3(c3), shape(mat, shape_type::Triangle), smooth(false), m(m)
+	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat, all_mesh_infos *m)
+		: c1(*c1), c2(*c2), c3(*c3), shape(mat, shape_type::Triangle), smooth(false), m(m)
 	{
 		calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 		calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -125,8 +132,8 @@ public:
 	};
 	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3,
 			 const vec3 &n1, const vec3 &n2, const vec3 &n3,
-			 material *mat, mesh_info *m)
-		: c1(c1), c2(c2), c3(c3), n1(n1), n2(n2), n3(n3),
+			 material *mat, all_mesh_infos *m)
+		: c1(*c1), c2(*c2), c3(*c3), n1(n1), n2(n2), n3(n3),
 		  shape(mat, shape_type::Triangle), smooth(true), m(m)
 	{
 		calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
@@ -157,9 +164,9 @@ public:
 		}
 
 		vec3 v0, v1, v2;
-		calculator.subs(*c2, *c1, v0);
-		calculator.subs(*c3, *c1, v1);
-		calculator.subs(hit_point, *c1, v2);
+		calculator.subs(c2, c1, v0);
+		calculator.subs(c3, c1, v1);
+		calculator.subs(hit_point, c1, v2);
 
 		float d00, d01, d11, d20, d21;
 		calculator.dot(v0, v0, d00);
@@ -183,22 +190,20 @@ public:
 		calculator.normalize(n_interp, normal);
 		normal.store();
 	};
-	virtual bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
+	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+						   float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
 };
 
 class sphere : public shape
 {
 private:
-	vec3 *center;
+	vec3 center;
 	float radius;
-
-	mat4 model;
-	mat4 normal;
 
 public:
 	sphere() = delete;
 	sphere(simd_vec3 &calculator, vec3 *center, float radius, material *mat)
-		: center(center), radius(radius), shape(mat, shape_type::Sphere)
+		: center(*center), radius(radius), shape(mat, shape_type::Sphere)
 	{
 		vec3 rvec(radius, radius, radius);
 
@@ -212,11 +217,12 @@ public:
 		box.min.store();
 		box.max.store();
 	};
-	vec3 *get_center() const { return center; };
-	virtual bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
+	vec3 get_center() const { return center; };
+	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+						   float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
 	virtual void get_normal(simd_vec3 &calculator, const vec3 &hit_point, vec3 &normal) const override
 	{
-		calculator.subs(hit_point, *center, normal);
+		calculator.subs(hit_point, center, normal);
 		calculator.normalize(normal, normal);
 		normal.store();
 	};
@@ -225,21 +231,19 @@ public:
 class plane : public shape
 {
 private:
-	vec3 *point;
-	vec3 *normal;
-
-	mat4 model;
-	mat4 normal;
+	vec3 point;
+	vec3 normal;
 
 public:
 	plane() = delete;
 	plane(vec3 *point, vec3 *normal, material *mat)
-		: point(point), normal(normal), shape(mat, shape_type::Plane)
+		: point(*point), normal(*normal), shape(mat, shape_type::Plane)
 	{
 		const float M = FLT_MAX;
 		box.min = vec3(-M, -M, -M);
 		box.max = vec3(M, M, M);
 	};
-	virtual void get_normal(simd_vec3 &calculator, const vec3 &hit_point, vec3 &normal) const override { normal = *this->normal; };
-	virtual bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
+	virtual void get_normal(simd_vec3 &calculator, const vec3 &hit_point, vec3 &normal) const override { normal = this->normal; };
+	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+						   float &t, bool culling = true, const float EPSILON = 1e-6f) const override;
 };

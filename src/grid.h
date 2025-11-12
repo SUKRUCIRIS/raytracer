@@ -10,7 +10,9 @@ private:
 	struct gridcell
 	{
 		std::vector<shape *> shapes;
+		std::vector<int> ids; // shape ids
 	};
+	std::vector<shape *> plane_shapes;
 	const std::vector<shape *> *shapes;
 	gridcell *cells;
 	aabb bounds;
@@ -33,5 +35,6 @@ public:
 
 	~grid();
 
-	bool intersect(simd_vec3 &calculator, const vec3 &rayOrigin, const vec3 &rayDir, float &t_hit, shape **hit_shape, bool culling = true, const float EPSILON = 1e-6f) const;
+	bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+				   float &t_hit, shape **hit_shape, bool culling = true, const float EPSILON = 1e-6f) const;
 };

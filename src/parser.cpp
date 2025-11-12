@@ -267,7 +267,8 @@ std::vector<material> *parser::get_materials()
 	return materials;
 }
 
-std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3> *vertices, std::vector<material> *materials, transformations *t, std::vector<mesh_info *> *m)
+std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calculator_m, std::vector<vec3> *vertices, std::vector<material> *materials,
+										 transformations *t, std::vector<all_mesh_infos *> *m)
 {
 	auto *shapes = new std::vector<shape *>;
 
@@ -278,6 +279,41 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 	}
 	const auto &objects = d["Scene"]["Objects"];
 
+	auto processTrans = [&](const rapidjson::Value &obj, mat4 &model)
+	{
+		if (obj.HasMember("Transformations"))
+		{
+			std::string transformations = obj["Transformations"].GetString();
+
+			std::istringstream iss(transformations);
+			std::vector<std::string> result;
+			std::string word;
+
+			while (iss >> word)
+			{
+				result.push_back(word);
+			}
+
+			for (auto it = result.begin(); it != result.end(); ++it)
+			{
+				const std::string &i = *it;
+				int index = std::stoi(i.substr(1));
+				if (i.starts_with("t"))
+				{
+					calculator_m.mult(t->translations[index - 1], model, model);
+				}
+				else if (i.starts_with("r"))
+				{
+					calculator_m.mult(t->rotations[index - 1], model, model);
+				}
+				else if (i.starts_with("s"))
+				{
+					calculator_m.mult(t->scales[index - 1], model, model);
+				}
+			}
+		}
+	};
+
 	auto processMesh = [&](const rapidjson::Value &mesh)
 	{
 		if (!mesh.HasMember("Faces") || !(mesh["Faces"].HasMember("_data") || mesh["Faces"].HasMember("_plyFile")))
@@ -285,9 +321,26 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 			return;
 		}
 
-		mesh_info *new_m = new mesh_info();
+		material &mat = materials->at(std::stoi(mesh["Material"].GetString()) - 1);
 
-		new_m->id = mesh["_id"].GetInt();
+		all_mesh_infos *ami = new all_mesh_infos();
+
+		int mesh_id = mesh["_id"].GetInt();
+
+		m->push_back(ami);
+
+		mesh_info m_info;
+		m_info.mat = &mat;
+
+		mat4 model;
+
+		processTrans(mesh, model);
+
+		m_info.model = model;
+		calculator_m.inverse(model, m_info.inv_model);
+		calculator_m.transpose(m_info.inv_model, m_info.normal);
+
+		ami->mesh_infos[mesh_id] = m_info;
 
 		std::string shadingMode = "flat";
 		if (mesh.HasMember("_shadingMode"))
@@ -298,8 +351,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 			std::string plyName = mesh["Faces"]["_plyFile"].GetString();
 			std::filesystem::path baseDir = std::filesystem::path(this->file_name).parent_path();
 			std::filesystem::path fullPath = baseDir / plyName;
-			load_ply(calculator, fullPath.string(), vertices, shapes,
-					 &materials->at(std::stoi(mesh["Material"].GetString()) - 1));
+			load_ply(calculator, fullPath.string(), vertices, shapes, &mat, ami);
 		}
 		std::istringstream iss(mesh["Faces"]["_data"].GetString());
 		long long i0, i1, i2;
@@ -311,8 +363,6 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 				static_cast<size_t>(i1 - 1),
 				static_cast<size_t>(i2 - 1)});
 		}
-
-		material &mat = materials->at(std::stoi(mesh["Material"].GetString()) - 1);
 
 		if (shadingMode == "smooth")
 		{
@@ -343,7 +393,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 					vertex_normals[tri[0]],
 					vertex_normals[tri[1]],
 					vertex_normals[tri[2]],
-					&mat));
+					&mat, ami));
 			}
 		}
 		else
@@ -355,7 +405,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 					&vertices->at(tri[0]),
 					&vertices->at(tri[1]),
 					&vertices->at(tri[2]),
-					&mat));
+					&mat, ami));
 			}
 		}
 	};
@@ -368,13 +418,22 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 		std::istringstream iss(tri["Indices"].GetString());
 		long long i0, i1, i2;
 
+		mat4 model;
+
+		processTrans(tri, model);
+
+		vec3 c1, c2, c3;
+
 		if (iss >> i0 >> i1 >> i2)
 		{
+			calculator_m.mult_vec(model, vertices->at(static_cast<size_t>(i0 - 1)), c1, false);
+			calculator_m.mult_vec(model, vertices->at(static_cast<size_t>(i1 - 1)), c2, false);
+			calculator_m.mult_vec(model, vertices->at(static_cast<size_t>(i2 - 1)), c3, false);
 			shapes->push_back(new triangle(
 				calculator,
-				&vertices->at(static_cast<size_t>(i0 - 1)),
-				&vertices->at(static_cast<size_t>(i1 - 1)),
-				&vertices->at(static_cast<size_t>(i2 - 1)),
+				&c1,
+				&c2,
+				&c3,
 				&materials->at(std::stoi(tri["Material"].GetString()) - 1), 0));
 		}
 	};
@@ -387,9 +446,17 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 		int center_idx = std::stoi(sph["Center"].GetString());
 		float radius = std::stof(sph["Radius"].GetString());
 
+		mat4 model;
+
+		processTrans(sph, model);
+
+		vec3 transformedCenter;
+		calculator_m.mult_vec(model, vertices->at(center_idx - 1), transformedCenter, false);
+		// tbd radius transform
+
 		shapes->push_back(new sphere(
 			calculator,
-			&vertices->at(center_idx - 1),
+			&transformedCenter,
 			radius,
 			&materials->at(std::stoi(sph["Material"].GetString()) - 1)));
 	};
@@ -405,11 +472,22 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, std::vector<vec3
 		float nx, ny, nz;
 		iss >> nx >> ny >> nz;
 
-		vec3 *normal_vec = new vec3(nx, ny, nz);
+		vec3 normal_vec(nx, ny, nz);
 
+		mat4 model;
+
+		processTrans(pl, model);
+
+		vec3 transformedPoint;
+		calculator_m.mult_vec(model, vertices->at(point_idx - 1), transformedPoint, false);
+		mat4 norm_m;
+		calculator_m.inverse(model, norm_m);
+		calculator_m.transpose(norm_m, norm_m);
+		calculator_m.mult_vec(norm_m, normal_vec, normal_vec, true);
+		calculator.normalize(normal_vec, normal_vec);
 		shapes->push_back(new plane(
-			&vertices->at(point_idx - 1),
-			normal_vec,
+			&transformedPoint,
+			&normal_vec,
 			&materials->at(std::stoi(pl["Material"].GetString()) - 1)));
 	};
 

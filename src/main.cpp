@@ -28,7 +28,9 @@ void process_file(const char *filename, int thread_count)
 
 	auto materials = p.get_materials();
 
-	auto shapes = p.get_shapes(calculator, vertices, materials);
+	std::vector<all_mesh_infos *> m;
+
+	auto shapes = p.get_shapes(calculator, mat_calc, vertices, materials, transformations, &m);
 
 	my_printf("Vertex count: %d\n", vertices->size());
 	my_printf("Shape count: %d\n", shapes->size());
@@ -62,9 +64,10 @@ void process_file(const char *filename, int thread_count)
 		auto ray_thread = [rt, camera, output](int index_start, int index_end, bool print)
 		{
 			simd_vec3 calculatorp;
+			simd_mat4 calculator_m(calculatorp);
 			for (size_t index = index_start; index < camera.ray_dirs.size() && index < index_end; index++)
 			{
-				rt->trace(calculatorp, camera.position, camera.ray_dirs.at(index), index, true, output);
+				rt->trace(calculatorp, calculator_m, camera.position, camera.ray_dirs.at(index), index, true, output);
 				if (print && index % 5000 == 0)
 				{
 					my_printf("Thread 0: %d/%d\n", index, index_end);

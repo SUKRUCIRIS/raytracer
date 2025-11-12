@@ -12,7 +12,7 @@ private:
 	char *json_content;
 	static char *get_json_content(const char *fileName);
 	static void load_ply(simd_vec3 &calculator, const std::string &filename,
-						 std::vector<vec3> *vertices, std::vector<shape *> *shapes, material *mat);
+						 std::vector<vec3> *vertices, std::vector<shape *> *shapes, material *mat, all_mesh_infos *ami);
 
 public:
 	parser() = delete;
@@ -25,7 +25,8 @@ public:
 	std::vector<camera> *get_camera(simd_vec3 &calculator);
 	std::vector<vec3> *get_vertices();
 	std::vector<material> *get_materials();
-	std::vector<shape *> *get_shapes(simd_vec3 &calculator, std::vector<vec3> *vertices, std::vector<material> *materials, transformations *t, std::vector<mesh_info *> *m);
+	std::vector<shape *> *get_shapes(simd_vec3 &calculator, simd_mat4 &calculator_m, std::vector<vec3> *vertices, std::vector<material> *materials,
+									 transformations *t, std::vector<all_mesh_infos *> *m);
 	float get_intersectionepsilon();
 	float get_shadowrayepsilon();
 	float get_maxrecursiondepth();

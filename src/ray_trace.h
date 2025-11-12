@@ -17,10 +17,10 @@ private:
 	const float max_depth;
 	bool use_grid;
 
-	void trace_rec(simd_vec3 &calculator, const vec3 &ray_origin, const vec3 &ray_dir,
+	void trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
 				   vec3 &color, const bool culling, int depth) const;
 
-	void calculate_color(simd_vec3 &calculator, const vec3 &normal, const material *mat,
+	void calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
 						 const vec3 &hit_point, const vec3 &ray_origin, const shape *min_shape,
 						 vec3 &color) const;
 
@@ -51,6 +51,6 @@ public:
 	{
 		delete gridx;
 	}
-	void trace(simd_vec3 &calculator, const vec3 &ray_origin, const vec3 &ray_dir,
+	void trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
 			   const int &index, const bool culling, unsigned char *output) const;
 };

@@ -43,6 +43,7 @@ camera::camera(simd_vec3 &calculator, float position_x, float position_y, float 
 			calculator.add(pixelPos, center, pixelPos);
 			calculator.subs(pixelPos, position, pixelPos);
 			calculator.normalize(pixelPos, pixelPos);
+			pixelPos.store();
 			ray_dirs.push_back(pixelPos);
 		}
 	}
@@ -100,7 +101,7 @@ camera::camera(simd_vec3 &calculator,
 			calculator.add(pixelPos, center, pixelPos);
 			calculator.subs(pixelPos, position, pixelPos);
 			calculator.normalize(pixelPos, pixelPos);
-
+			pixelPos.store();
 			ray_dirs.push_back(pixelPos);
 		}
 	}

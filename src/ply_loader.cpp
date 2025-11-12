@@ -56,7 +56,7 @@ void parser::load_ply(simd_vec3 &calculator,
 					  const std::string &filename,
 					  std::vector<vec3> *vertices,
 					  std::vector<shape *> *shapes,
-					  material *mat)
+					  material *mat, all_mesh_infos *ami)
 {
 	std::ifstream file(filename, std::ios::binary);
 	if (!file.is_open())
@@ -509,7 +509,7 @@ void parser::load_ply(simd_vec3 &calculator,
 					&vertices->at(a + startIndex),
 					&vertices->at(b + startIndex),
 					&vertices->at(c + startIndex),
-					mat));
+					mat, ami));
 				triCount++;
 			}
 			else
@@ -543,7 +543,7 @@ void parser::load_ply(simd_vec3 &calculator,
 					&vertices->at(a + startIndex),
 					&vertices->at(b + startIndex),
 					&vertices->at(c + startIndex),
-					mat));
+					mat, ami));
 				triCount++;
 			}
 			else
