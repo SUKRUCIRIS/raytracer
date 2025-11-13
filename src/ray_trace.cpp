@@ -153,13 +153,9 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	if (use_grid)
 	{
 		shape *hit_shape = 0;
-		if (gridx->intersect(calculator, calculator_m, ray_origin, ray_dir, t, &hit_shape, min_id, culling, intersectionepsilon))
+		if (gridx->intersect(calculator, calculator_m, ray_origin, ray_dir, min_t, &hit_shape, min_id, culling, intersectionepsilon))
 		{
-			if (t < min_t)
-			{
-				min_t = t;
-				min_shape = hit_shape;
-			}
+			min_shape = hit_shape;
 		}
 	}
 	else

@@ -410,6 +410,42 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		}
 	};
 
+	auto processMeshInstance = [&](const rapidjson::Value &MeshInstance)
+	{
+		int id = MeshInstance["_id"].GetInt();
+		int base_id = MeshInstance["_baseMeshId"].GetInt();
+		bool reset = false;
+		if (MeshInstance.HasMember("_resetTransform"))
+		{
+			reset = MeshInstance["_resetTransform"].GetBool();
+		}
+		material &mat = materials->at(std::stoi(MeshInstance["Material"].GetString()) - 1);
+		mat4 model;
+		processTrans(MeshInstance, model);
+		all_mesh_infos *target = 0;
+		for (auto &&i : *m)
+		{
+			if (i->mesh_infos.contains(base_id))
+			{
+				target = i;
+			}
+		}
+		if (target == 0)
+		{
+			my_printf("MeshInstance can't find base mesh.\n");
+			exit(-1);
+		}
+		if (!reset)
+		{
+			calculator_m.mult(model, target->mesh_infos[base_id].model, model);
+		}
+		mesh_info m_info;
+		m_info.mat = &mat;
+		calculator_m.inverse(model, m_info.inv_model);
+		calculator_m.transpose(m_info.inv_model, m_info.normal);
+		target->mesh_infos[id] = m_info;
+	};
+
 	auto processTriangle = [&](const rapidjson::Value &tri)
 	{
 		if (!tri.HasMember("Indices"))
@@ -418,23 +454,36 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		std::istringstream iss(tri["Indices"].GetString());
 		long long i0, i1, i2;
 
+		auto &mat = materials->at(std::stoi(tri["Material"].GetString()) - 1);
+
+		all_mesh_infos *ami = new all_mesh_infos();
+
+		int mesh_id = 123456;
+
+		m->push_back(ami);
+
+		mesh_info m_info;
+		m_info.mat = &mat;
+
 		mat4 model;
 
 		processTrans(tri, model);
 
-		vec3 c1, c2, c3;
+		m_info.model = model;
+		calculator_m.inverse(model, m_info.inv_model);
+		calculator_m.transpose(m_info.inv_model, m_info.normal);
+
+		ami->mesh_infos[mesh_id] = m_info;
 
 		if (iss >> i0 >> i1 >> i2)
 		{
-			calculator_m.mult_vec(model, vertices->at(static_cast<size_t>(i0 - 1)), c1, false);
-			calculator_m.mult_vec(model, vertices->at(static_cast<size_t>(i1 - 1)), c2, false);
-			calculator_m.mult_vec(model, vertices->at(static_cast<size_t>(i2 - 1)), c3, false);
 			shapes->push_back(new triangle(
 				calculator,
-				&c1,
-				&c2,
-				&c3,
-				&materials->at(std::stoi(tri["Material"].GetString()) - 1), 0));
+				&vertices->at(static_cast<size_t>(i0 - 1)),
+				&vertices->at(static_cast<size_t>(i1 - 1)),
+				&vertices->at(static_cast<size_t>(i2 - 1)),
+				&mat,
+				ami));
 		}
 	};
 
@@ -559,6 +608,22 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		else if (node.IsObject())
 		{
 			processMesh(node);
+		}
+	}
+
+	if (objects.HasMember("MeshInstance"))
+	{
+		const auto &node = objects["MeshInstance"];
+		if (node.IsArray())
+		{
+			for (const auto &item : node.GetArray())
+			{
+				processMeshInstance(item);
+			}
+		}
+		else if (node.IsObject())
+		{
+			processMeshInstance(node);
 		}
 	}
 

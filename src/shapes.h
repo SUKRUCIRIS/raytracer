@@ -79,7 +79,7 @@ public:
 	shape_type get_shapetype() const { return t; };
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
 						   float &t, int id, bool culling = true, const float EPSILON = 1e-6f) const = 0;
-	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &hit_point, int id, vec3 &normal) const = 0;
+	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal) const = 0;
 	virtual void getBoundingBox(int id, simd_vec3 &calculator, simd_mat4 &calculator_m, aabb &box) const { box = this->box; };
 	virtual std::vector<int> get_ids()
 		const
@@ -188,7 +188,7 @@ public:
 		box.min.store();
 		box.max.store();
 	}
-	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &hit_point, int id, vec3 &normal)
+	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal)
 		const override
 	{
 		const mesh_info &mi = m->mesh_infos[id];
@@ -200,10 +200,13 @@ public:
 			return;
 		}
 
+		vec3 hit_point_obj;
+		calculator_m.mult_vec(mi.inv_model, hit_point, hit_point_obj, false);
+
 		vec3 v0, v1, v2;
 		calculator.subs(c2, c1, v0);
 		calculator.subs(c3, c1, v1);
-		calculator.subs(hit_point, c1, v2);
+		calculator.subs(hit_point_obj, c1, v2);
 
 		float d00, d01, d11, d20, d21;
 		calculator.dot(v0, v0, d00);
@@ -272,7 +275,7 @@ public:
 	vec3 get_center() const { return center; };
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
 						   float &t, int id, bool culling = true, const float EPSILON = 1e-6f) const override;
-	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &hit_point, int id, vec3 &normal)
+	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal)
 		const override
 	{
 		calculator.subs(hit_point, center, normal);
@@ -296,7 +299,7 @@ public:
 		box.min = vec3(-M, -M, -M);
 		box.max = vec3(M, M, M);
 	};
-	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &hit_point, int id, vec3 &normal)
+	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal)
 		const override { normal = this->normal; };
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
 						   float &t, int id, bool culling = true, const float EPSILON = 1e-6f) const override;

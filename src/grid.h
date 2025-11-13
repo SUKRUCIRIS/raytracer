@@ -20,6 +20,8 @@ private:
 	vec3 world_size;
 	vec3 inv_cell_size;
 
+	void calculate_aabb(simd_vec3 &calculator, simd_mat4 &calculator_m);
+
 	int get_cell_index(float pos, float grid_min, float inv_cell_sz, float grid_dim_sz) const;
 
 	float get_t_max(float start, int cell_idx, int step, float cell_sz, float grid_min, float inv_dir) const;
