@@ -10,7 +10,7 @@ private:
 	struct gridcell
 	{
 		std::vector<shape *> shapes;
-		std::vector<int> ids; // shape ids
+		std::vector<int> ids; // shape ids for instancing
 	};
 	std::vector<shape *> plane_shapes;
 	const std::vector<shape *> *shapes;
@@ -19,8 +19,6 @@ private:
 	vec3 grid_dim;
 	vec3 world_size;
 	vec3 inv_cell_size;
-
-	void calculate_aabb(simd_vec3 &calculator);
 
 	int get_cell_index(float pos, float grid_min, float inv_cell_sz, float grid_dim_sz) const;
 
@@ -36,5 +34,5 @@ public:
 	~grid();
 
 	bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-				   float &t_hit, shape **hit_shape, bool culling = true, const float EPSILON = 1e-6f) const;
+				   float &t_hit, shape **hit_shape, int &hit_id, bool culling = true, const float EPSILON = 1e-6f) const;
 };

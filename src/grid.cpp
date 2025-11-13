@@ -13,8 +13,7 @@ grid::grid(const std::vector<shape *> *shape_list)
 		return;
 
 	simd_vec3 calculator;
-
-	calculate_aabb(calculator);
+	simd_mat4 calculator_m(calculator);
 
 	if (!shapes || shapes->empty())
 		return;
@@ -56,35 +55,47 @@ grid::grid(const std::vector<shape *> *shape_list)
 		return;
 
 	aabb sa;
+	const float INF = std::numeric_limits<float>::infinity();
+	bounds.min.load(INF, INF, INF);
+	bounds.max.load(-INF, -INF, -INF);
 	for (auto s : *shapes)
 	{
-		s->getBoundingBox(sa);
-		sa.min.store();
-		sa.max.store();
+		std::vector<int> ids = s->get_ids();
 
-		int ix0 = get_cell_index(sa.min.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
-		int iy0 = get_cell_index(sa.min.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
-		int iz0 = get_cell_index(sa.min.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
-
-		int ix1 = get_cell_index(sa.max.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
-		int iy1 = get_cell_index(sa.max.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
-		int iz1 = get_cell_index(sa.max.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
-
-		ix0 = clamp_int(ix0, 0, nx - 1);
-		iy0 = clamp_int(iy0, 0, ny - 1);
-		iz0 = clamp_int(iz0, 0, nz - 1);
-		ix1 = clamp_int(ix1, 0, nx - 1);
-		iy1 = clamp_int(iy1, 0, ny - 1);
-		iz1 = clamp_int(iz1, 0, nz - 1);
-
-		for (int iz = iz0; iz <= iz1; ++iz)
+		for (int id : ids)
 		{
-			for (int iy = iy0; iy <= iy1; ++iy)
+			s->getBoundingBox(id, calculator, calculator_m, sa);
+			sa.min.store();
+			sa.max.store();
+			calculator.min(bounds.min, sa.min, bounds.min);
+			calculator.max(bounds.max, sa.max, bounds.max);
+
+			int ix0 = get_cell_index(sa.min.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
+			int iy0 = get_cell_index(sa.min.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
+			int iz0 = get_cell_index(sa.min.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
+
+			int ix1 = get_cell_index(sa.max.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
+			int iy1 = get_cell_index(sa.max.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
+			int iz1 = get_cell_index(sa.max.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
+
+			ix0 = clamp_int(ix0, 0, nx - 1);
+			iy0 = clamp_int(iy0, 0, ny - 1);
+			iz0 = clamp_int(iz0, 0, nz - 1);
+			ix1 = clamp_int(ix1, 0, nx - 1);
+			iy1 = clamp_int(iy1, 0, ny - 1);
+			iz1 = clamp_int(iz1, 0, nz - 1);
+
+			for (int iz = iz0; iz <= iz1; ++iz)
 			{
-				for (int ix = ix0; ix <= ix1; ++ix)
+				for (int iy = iy0; iy <= iy1; ++iy)
 				{
-					const size_t index = (size_t)ix + (size_t)nx * ((size_t)iy + (size_t)ny * (size_t)iz);
-					cells[index].shapes.push_back(s);
+					for (int ix = ix0; ix <= ix1; ++ix)
+					{
+						const size_t index =
+							(size_t)ix + (size_t)nx * ((size_t)iy + (size_t)ny * (size_t)iz);
+						cells[index].shapes.push_back(s);
+						cells[index].ids.push_back(id);
+					}
 				}
 			}
 		}
@@ -98,40 +109,6 @@ grid::~grid()
 		delete[] cells;
 		cells = nullptr;
 	}
-}
-
-void grid::calculate_aabb(simd_vec3 &calculator)
-{
-	const float INF = std::numeric_limits<float>::infinity();
-	const float aabb_pad = 1e-4f;
-
-	bounds.min.load(INF, INF, INF);
-	bounds.max.load(-INF, -INF, -INF);
-
-	aabb sa;
-	for (auto s : *shapes)
-	{
-		if (s->get_shapetype() != Plane)
-		{
-			s->getBoundingBox(sa);
-
-			calculator.min(bounds.min, sa.min, bounds.min);
-			calculator.max(bounds.max, sa.max, bounds.max);
-		}
-		else
-		{
-			plane_shapes.push_back(s);
-		}
-	}
-
-	vec3 pad(aabb_pad);
-	calculator.subs(bounds.min, pad, bounds.min);
-	calculator.add(bounds.max, pad, bounds.max);
-	bounds.min.store();
-	bounds.max.store();
-
-	calculator.subs(bounds.max, bounds.min, world_size);
-	world_size.store();
 }
 
 int grid::get_cell_index(float pos, float grid_min, float inv_cell_sz, float grid_dim_sz) const
@@ -201,73 +178,30 @@ bool grid::intersect_ray_aabb(simd_vec3 &calculator, const vec3 &rayOrigin, cons
 	return true;
 }
 
-static inline bool rayIntersectsAABB_fast(simd_vec3 &calculator,
-										  const vec3 &ro, const vec3 &rd,
-										  const aabb &b,
-										  float tminLimit, float tmaxLimit,
-										  float EPSILON,
-										  float &tmin_out, float &tmax_out)
-{
-	vec3 tmp0, tmp1;
-	calculator.subs(b.min, ro, tmp0);
-	calculator.div(tmp0, rd, tmp0);
-
-	calculator.subs(b.max, ro, tmp1);
-	calculator.div(tmp1, rd, tmp1);
-
-	vec3 tmin_vec, tmax_vec;
-	calculator.min(tmp0, tmp1, tmin_vec);
-	calculator.max(tmp0, tmp1, tmax_vec);
-
-	tmin_vec.store();
-	tmax_vec.store();
-
-	const float tmin_x = tmin_vec.get_x();
-	const float tmin_y = tmin_vec.get_y();
-	const float tmin_z = tmin_vec.get_z();
-
-	const float tmax_x = tmax_vec.get_x();
-	const float tmax_y = tmax_vec.get_y();
-	const float tmax_z = tmax_vec.get_z();
-
-	float tmin = std::max(std::max(tmin_x, tmin_y), tmin_z);
-	float tmax = std::min(std::min(tmax_x, tmax_y), tmax_z);
-
-	if (tmin > tmax + EPSILON)
-		return false;
-	if (tmin > tmaxLimit + EPSILON)
-		return false;
-	if (tmax < tminLimit - EPSILON)
-		return false;
-
-	tmin_out = std::max(tmin, tminLimit);
-	tmax_out = std::min(tmax, tmaxLimit);
-	return (tmax_out >= tmin_out - EPSILON);
-}
-
 bool grid::intersect(simd_vec3 &calculator,
 					 simd_mat4 &calculator_m,
 					 const vec3 &rayOrigin,
 					 const vec3 &rayDir,
 					 float &t_hit,
 					 shape **hit_shape,
+					 int &hit_id,
 					 bool culling,
 					 const float EPSILON) const
 {
 	t_hit = std::numeric_limits<float>::infinity();
 	*hit_shape = nullptr;
+	hit_id = 0;
 
 	if (!shapes || shapes->empty())
 		return false;
 
 	vec3 ro = rayOrigin;
-	ro.store();
 	vec3 rd = rayDir;
+	ro.store();
 	rd.store();
 
 	float tmin_box = 0;
 	float tmax_box = 0;
-
 	const bool aabb_hit = intersect_ray_aabb(calculator, ro, rd, tmin_box, tmax_box, EPSILON);
 
 	float t = std::max(tmin_box, 0.0f);
@@ -280,23 +214,29 @@ bool grid::intersect(simd_vec3 &calculator,
 	const int ny = (int)grid_dim.get_y();
 	const int nz = (int)grid_dim.get_z();
 
+	// --- CASE: single cell or no hit
 	if ((nx == 1 && ny == 1 && nz == 1) || !aabb_hit)
 	{
 		float best_t = t_hit;
 		shape *best_s = nullptr;
+		int best_id = 0;
 
 		if (aabb_hit)
 		{
 			const auto &cell = cells[0];
-			for (auto s : cell.shapes)
+			for (size_t i = 0; i < cell.shapes.size(); ++i)
 			{
+				auto s = cell.shapes[i];
+				int id = cell.ids[i];
+
 				float t_candidate;
-				if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, culling, EPSILON))
+				if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, id, culling, EPSILON))
 				{
 					if (t_candidate > EPSILON && t_candidate < best_t)
 					{
 						best_t = t_candidate;
 						best_s = s;
+						best_id = id;
 					}
 				}
 			}
@@ -305,12 +245,13 @@ bool grid::intersect(simd_vec3 &calculator,
 		for (auto s : plane_shapes)
 		{
 			float t_candidate;
-			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, culling, EPSILON))
+			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, 0, culling, EPSILON))
 			{
 				if (t_candidate > EPSILON && t_candidate < best_t)
 				{
 					best_t = t_candidate;
 					best_s = s;
+					best_id = 0;
 				}
 			}
 		}
@@ -319,11 +260,13 @@ bool grid::intersect(simd_vec3 &calculator,
 		{
 			t_hit = best_t;
 			*hit_shape = best_s;
+			hit_id = best_id;
 			return true;
 		}
 		return false;
 	}
 
+	// --- Regular grid traversal
 	int ix = get_cell_index(pos.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
 	int iy = get_cell_index(pos.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
 	int iz = get_cell_index(pos.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
@@ -356,11 +299,15 @@ bool grid::intersect(simd_vec3 &calculator,
 
 		float local_best_t = t_hit;
 		shape *local_best_shape = *hit_shape;
+		int local_best_id = hit_id;
 
-		for (auto s : cell.shapes)
+		for (size_t i = 0; i < cell.shapes.size(); ++i)
 		{
+			auto s = cell.shapes[i];
+			int id = cell.ids[i];
+
 			float t_candidate;
-			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, culling, EPSILON))
+			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, id, culling, EPSILON))
 			{
 				if (t_candidate > EPSILON && t_candidate >= tmin_box - EPSILON && t_candidate <= tmax_box + EPSILON)
 				{
@@ -368,6 +315,7 @@ bool grid::intersect(simd_vec3 &calculator,
 					{
 						local_best_t = t_candidate;
 						local_best_shape = s;
+						local_best_id = id;
 					}
 				}
 			}
@@ -376,15 +324,13 @@ bool grid::intersect(simd_vec3 &calculator,
 		for (auto s : plane_shapes)
 		{
 			float t_candidate;
-			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, culling, EPSILON))
+			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir, t_candidate, 0, culling, EPSILON))
 			{
-				if (t_candidate > EPSILON)
+				if (t_candidate > EPSILON && t_candidate < local_best_t)
 				{
-					if (t_candidate < local_best_t)
-					{
-						local_best_t = t_candidate;
-						local_best_shape = s;
-					}
+					local_best_t = t_candidate;
+					local_best_shape = s;
+					local_best_id = 0;
 				}
 			}
 		}
@@ -393,9 +339,10 @@ bool grid::intersect(simd_vec3 &calculator,
 		{
 			t_hit = local_best_t;
 			*hit_shape = local_best_shape;
+			hit_id = local_best_id;
 		}
 
-		const float earliestNextT = std::min(std::min(tMaxX, tMaxY), tMaxZ);
+		const float earliestNextT = std::min({tMaxX, tMaxY, tMaxZ});
 		if (*hit_shape && t_hit < earliestNextT)
 			return true;
 

@@ -36,7 +36,9 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		if (use_grid)
 		{
 			shape *hit_shape = 0;
-			if (gridx->intersect(calculator, calculator_m, shadow_origin, light_dir, t_shadow, &hit_shape, false, intersectionepsilon))
+			int hit_id;
+			if (gridx->intersect(calculator, calculator_m, shadow_origin, light_dir, t_shadow,
+								 &hit_shape, hit_id, false, intersectionepsilon))
 			{
 				if (t_shadow < distance_to_light && hit_shape != min_shape)
 				{
@@ -146,11 +148,12 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	float t;
 	float min_t = FLT_MAX;
 	shape *min_shape = 0;
+	int min_id = 0;
 
 	if (use_grid)
 	{
 		shape *hit_shape = 0;
-		if (gridx->intersect(calculator, calculator_m, ray_origin, ray_dir, t, &hit_shape, culling, intersectionepsilon))
+		if (gridx->intersect(calculator, calculator_m, ray_origin, ray_dir, t, &hit_shape, min_id, culling, intersectionepsilon))
 		{
 			if (t < min_t)
 			{
@@ -179,12 +182,12 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		color = backgroundcolor;
 		return;
 	}
-	material *mat = min_shape->getMaterial();
+	material *mat = min_shape->getMaterial(min_id);
 	vec3 hit_point;
 	calculator.mult_scalar(ray_dir, min_t, hit_point);
 	calculator.add(ray_origin, hit_point, hit_point);
 	vec3 normal;
-	min_shape->get_normal(calculator, hit_point, normal);
+	min_shape->get_normal(calculator, calculator_m, hit_point, min_id, normal);
 	if (mat->mt == Mirror)
 	{
 		vec3 R;

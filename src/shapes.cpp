@@ -1,18 +1,25 @@
 #include "shapes.h"
 #include <math.h>
 
-bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
+bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+						 float &t, int id, bool culling, const float EPSILON) const
 {
-	vec3 rayOrigin_scaled;
-	calculator.mult_scalar(rayOrigin, GEOMETRY_SCALE_FACTOR, rayOrigin_scaled);
 
-	const vec3 &rayDir_scaled = rayDir;
+	const mesh_info &mi = m->mesh_infos[id];
+	vec3 rayOrigin_obj, rayDir_obj;
+	vec3 tmp = rayOrigin;
+	calculator_m.mult_vec(mi.inv_model, tmp, rayOrigin_obj, false);
+	tmp = rayDir;
+	calculator_m.mult_vec(mi.inv_model, tmp, rayDir_obj, true);
+
+	vec3 rayOrigin_scaled;
+	calculator.mult_scalar(rayOrigin_obj, GEOMETRY_SCALE_FACTOR, rayOrigin_scaled);
 
 	vec3 edge1, edge2, h, s, q;
 	calculator.subs(c2_scaled, c1_scaled, edge1);
 	calculator.subs(c3_scaled, c1_scaled, edge2);
 
-	calculator.cross(rayDir_scaled, edge2, h);
+	calculator.cross(rayDir_obj, edge2, h);
 
 	float a;
 	calculator.dot(edge1, h, a);
@@ -41,7 +48,7 @@ bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const v
 	calculator.cross(s, edge1, q);
 
 	float v;
-	calculator.dot(rayDir_scaled, q, v);
+	calculator.dot(rayDir_obj, q, v);
 	v *= f;
 	if (v < (0.0f - EPSILON) || (u + v) > (1.0f + EPSILON))
 		return false;
@@ -54,7 +61,8 @@ bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const v
 	return t > EPSILON;
 }
 
-bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
+bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+					   float &t, int id, bool culling, const float EPSILON) const
 {
 	vec3 oc;
 	calculator.subs(rayOrigin, center, oc);
@@ -87,7 +95,8 @@ bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec
 	return true;
 }
 
-bool plane::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir, float &t, bool culling, const float EPSILON) const
+bool plane::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
+					  float &t, int id, bool culling, const float EPSILON) const
 {
 	float denom;
 	calculator.dot(normal, rayDir, denom);
