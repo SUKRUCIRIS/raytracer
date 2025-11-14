@@ -197,6 +197,7 @@ public:
 			vec3 tmp = this->normal;
 			calculator_m.mult_vec(mi.normal, tmp, normal, true);
 			calculator.normalize(normal, normal);
+			normal.store();
 			return;
 		}
 

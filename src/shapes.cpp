@@ -8,8 +8,10 @@ bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const v
 	const mesh_info &mi = m->mesh_infos[id];
 	vec3 rayOrigin_obj, rayDir_obj;
 	vec3 tmp = rayOrigin;
+	tmp.store();
 	calculator_m.mult_vec(mi.inv_model, tmp, rayOrigin_obj, false);
 	tmp = rayDir;
+	tmp.store();
 	calculator_m.mult_vec(mi.inv_model, tmp, rayDir_obj, true);
 
 	vec3 rayOrigin_scaled;

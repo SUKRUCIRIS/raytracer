@@ -40,7 +40,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 			if (gridx->intersect(calculator, calculator_m, shadow_origin, light_dir, t_shadow,
 								 &hit_shape, hit_id, false, intersectionepsilon))
 			{
-				if (t_shadow < distance_to_light && hit_shape != min_shape)
+				if (t_shadow < distance_to_light)
 				{
 					in_shadow = true;
 				}
@@ -113,21 +113,14 @@ bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, c
 	float cosi;
 	calculator.dot(I, N, cosi);
 	cosi = -cosi;
-	vec3 normal = N;
 	float eta = n1 / n2;
-	if (cosi < 0.0f)
-	{
-		cosi = -cosi;
-		eta = n2 / n1;
-		calculator.mult_scalar(N, -1.0f, normal);
-	}
 
+	const vec3 &normal = N;
 	float k = 1.0f - eta * eta * (1.0f - cosi * cosi);
 	if (k < 0.0f)
 	{
 		return false;
 	}
-
 	vec3 term1, term2;
 	calculator.mult_scalar(I, eta, term1);
 	calculator.mult_scalar(normal, (eta * cosi - sqrtf(k)), term2);

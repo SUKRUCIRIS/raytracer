@@ -226,8 +226,24 @@ bool grid::intersect(simd_vec3 &calculator,
 	*hit_shape = nullptr;
 	hit_id = -1;
 
-	if (!shapes || shapes->empty())
-		return false;
+	if (!shapes || shapes->empty() || !cells)
+	{
+		for (auto s : plane_shapes)
+		{
+			float t_candidate;
+			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
+							 t_candidate, -1, culling, EPSILON))
+			{
+				if (t_candidate > EPSILON && t_candidate < t_hit)
+				{
+					t_hit = t_candidate;
+					*hit_shape = s;
+					hit_id = -1;
+				}
+			}
+		}
+		return (*hit_shape != nullptr);
+	}
 
 	vec3 ro = rayOrigin;
 	vec3 rd = rayDir;
@@ -238,103 +254,32 @@ bool grid::intersect(simd_vec3 &calculator,
 	float tmax_box = 0;
 	const bool aabb_hit = intersect_ray_aabb(calculator, ro, rd, tmin_box, tmax_box, EPSILON);
 
-	float t = std::max(tmin_box, 0.0f);
-	vec3 pos;
-	calculator.mult_scalar(rd, t, pos);
-	calculator.add(ro, pos, pos);
-	pos.store();
-
-	const int nx = (int)grid_dim.get_x();
-	const int ny = (int)grid_dim.get_y();
-	const int nz = (int)grid_dim.get_z();
-
-	if ((nx == 1 && ny == 1 && nz == 1) || !aabb_hit)
+	if (!aabb_hit)
 	{
-		float best_t = std::numeric_limits<float>::infinity();
-		shape *best_s = nullptr;
-		int best_id = -1;
-
-		if (aabb_hit)
-		{
-			const auto &cell = cells[0];
-			for (size_t i = 0; i < cell.shapes.size(); ++i)
-			{
-				auto s = cell.shapes[i];
-				int id = cell.ids[i];
-
-				float t_candidate;
-				if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-								 t_candidate, id, culling, EPSILON))
-				{
-					if (t_candidate > EPSILON && t_candidate < best_t)
-					{
-						best_t = t_candidate;
-						best_s = s;
-						best_id = id;
-					}
-				}
-			}
-		}
-
 		for (auto s : plane_shapes)
 		{
 			float t_candidate;
 			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
 							 t_candidate, -1, culling, EPSILON))
 			{
-				if (t_candidate > EPSILON && t_candidate < best_t)
+				if (t_candidate > EPSILON && t_candidate < t_hit)
 				{
-					best_t = t_candidate;
-					best_s = s;
-					best_id = -1;
+					t_hit = t_candidate;
+					*hit_shape = s;
+					hit_id = -1;
 				}
 			}
 		}
-
-		if (best_s)
-		{
-			t_hit = best_t;
-			*hit_shape = best_s;
-			hit_id = best_id;
-			return true;
-		}
-		return false;
+		return (*hit_shape != nullptr);
 	}
 
-	int ix = get_cell_index(pos.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
-	int iy = get_cell_index(pos.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
-	int iz = get_cell_index(pos.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
+	const int nx = (int)grid_dim.get_x();
+	const int ny = (int)grid_dim.get_y();
+	const int nz = (int)grid_dim.get_z();
 
-	int stepX = (rd.get_x() > 0.0f) ? 1 : ((rd.get_x() < 0.0f) ? -1 : 0);
-	int stepY = (rd.get_y() > 0.0f) ? 1 : ((rd.get_y() < 0.0f) ? -1 : 0);
-	int stepZ = (rd.get_z() > 0.0f) ? 1 : ((rd.get_z() < 0.0f) ? -1 : 0);
-
-	const float cellSizeX = world_size.get_x() / (float)nx;
-	const float cellSizeY = world_size.get_y() / (float)ny;
-	const float cellSizeZ = world_size.get_z() / (float)nz;
-
-	const float INF = std::numeric_limits<float>::infinity();
-	const float invDirX = (fabs(rd.get_x()) < EPSILON) ? INF : 1.0f / rd.get_x();
-	const float invDirY = (fabs(rd.get_y()) < EPSILON) ? INF : 1.0f / rd.get_y();
-	const float invDirZ = (fabs(rd.get_z()) < EPSILON) ? INF : 1.0f / rd.get_z();
-
-	float tMaxX = (stepX == 0) ? INF : get_t_max(ro.get_x(), ix, stepX, cellSizeX, bounds.min.get_x(), invDirX);
-	float tMaxY = (stepY == 0) ? INF : get_t_max(ro.get_y(), iy, stepY, cellSizeY, bounds.min.get_y(), invDirY);
-	float tMaxZ = (stepZ == 0) ? INF : get_t_max(ro.get_z(), iz, stepZ, cellSizeZ, bounds.min.get_z(), invDirZ);
-
-	const float tDeltaX = (stepX == 0) ? INF : (cellSizeX * fabs(invDirX));
-	const float tDeltaY = (stepY == 0) ? INF : (cellSizeY * fabs(invDirY));
-	const float tDeltaZ = (stepZ == 0) ? INF : (cellSizeZ * fabs(invDirZ));
-
-	while (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
+	if (nx == 1 && ny == 1 && nz == 1)
 	{
-		const size_t cellIndex = (size_t)ix + (size_t)nx * ((size_t)iy + (size_t)ny * (size_t)iz);
-		const auto &cell = cells[cellIndex];
-
-		float local_best_t = t_hit;
-		shape *local_best_shape = *hit_shape;
-		int local_best_id = hit_id;
-
+		const auto &cell = cells[0];
 		for (size_t i = 0; i < cell.shapes.size(); ++i)
 		{
 			auto s = cell.shapes[i];
@@ -344,63 +289,112 @@ bool grid::intersect(simd_vec3 &calculator,
 			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
 							 t_candidate, id, culling, EPSILON))
 			{
-				if (t_candidate > EPSILON &&
-					t_candidate >= tmin_box - EPSILON &&
-					t_candidate <= tmax_box + EPSILON &&
-					t_candidate < local_best_t)
+				if (t_candidate > EPSILON && t_candidate < t_hit)
 				{
-					local_best_t = t_candidate;
-					local_best_shape = s;
-					local_best_id = id;
+					t_hit = t_candidate;
+					*hit_shape = s;
+					hit_id = id;
 				}
 			}
 		}
+	}
+	else
+	{
+		float t = std::max(tmin_box, 0.0f);
+		vec3 pos;
+		calculator.mult_scalar(rd, t, pos);
+		calculator.add(ro, pos, pos);
+		pos.store();
 
-		for (auto s : plane_shapes)
+		int ix = get_cell_index(pos.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
+		int iy = get_cell_index(pos.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
+		int iz = get_cell_index(pos.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
+
+		const int stepX = (rd.get_x() > 0.0f) ? 1 : ((rd.get_x() < 0.0f) ? -1 : 0);
+		const int stepY = (rd.get_y() > 0.0f) ? 1 : ((rd.get_y() < 0.0f) ? -1 : 0);
+		const int stepZ = (rd.get_z() > 0.0f) ? 1 : ((rd.get_z() < 0.0f) ? -1 : 0);
+
+		const float cellSizeX = world_size.get_x() / (float)nx;
+		const float cellSizeY = world_size.get_y() / (float)ny;
+		const float cellSizeZ = world_size.get_z() / (float)nz;
+
+		const float INF = std::numeric_limits<float>::infinity();
+
+		const float invDirX = 1.0f / rd.get_x();
+		const float invDirY = 1.0f / rd.get_y();
+		const float invDirZ = 1.0f / rd.get_z();
+
+		float tMaxX = (stepX == 0) ? INF : get_t_max(ro.get_x(), ix, stepX, cellSizeX, bounds.min.get_x(), invDirX);
+		float tMaxY = (stepY == 0) ? INF : get_t_max(ro.get_y(), iy, stepY, cellSizeY, bounds.min.get_y(), invDirY);
+		float tMaxZ = (stepZ == 0) ? INF : get_t_max(ro.get_z(), iz, stepZ, cellSizeZ, bounds.min.get_z(), invDirZ);
+
+		const float tDeltaX = (stepX == 0) ? INF : (cellSizeX * fabs(invDirX));
+		const float tDeltaY = (stepY == 0) ? INF : (cellSizeY * fabs(invDirY));
+		const float tDeltaZ = (stepZ == 0) ? INF : (cellSizeZ * fabs(invDirZ));
+
+		while (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
 		{
-			float t_candidate;
-			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-							 t_candidate, -1, culling, EPSILON))
+			const size_t cellIndex = (size_t)ix + (size_t)nx * ((size_t)iy + (size_t)ny * (size_t)iz);
+			const auto &cell = cells[cellIndex];
+
+			for (size_t i = 0; i < cell.shapes.size(); ++i)
 			{
-				if (t_candidate > EPSILON &&
-					t_candidate < local_best_t)
+				auto s = cell.shapes[i];
+				int id = cell.ids[i];
+
+				float t_candidate;
+				if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
+								 t_candidate, id, culling, EPSILON))
 				{
-					local_best_t = t_candidate;
-					local_best_shape = s;
-					local_best_id = -1;
+					if (t_candidate > EPSILON && t_candidate < t_hit)
+					{
+						t_hit = t_candidate;
+						*hit_shape = s;
+						hit_id = id;
+					}
 				}
 			}
-		}
 
-		if (local_best_t < t_hit)
-		{
-			t_hit = local_best_t;
-			*hit_shape = local_best_shape;
-			hit_id = local_best_id;
-		}
+			const float earliestNextT = std::min({tMaxX, tMaxY, tMaxZ});
 
-		const float earliestNextT = std::min({tMaxX, tMaxY, tMaxZ});
-		if (*hit_shape && t_hit < earliestNextT)
-			return true;
+			if (*hit_shape && t_hit < earliestNextT)
+				break;
 
-		if (tMaxX <= tMaxY && tMaxX <= tMaxZ)
-		{
-			ix += stepX;
-			tMaxX += tDeltaX;
-		}
-		else if (tMaxY <= tMaxZ)
-		{
-			iy += stepY;
-			tMaxY += tDeltaY;
-		}
-		else
-		{
-			iz += stepZ;
-			tMaxZ += tDeltaZ;
-		}
+			if (earliestNextT > tmax_box)
+				break;
 
-		if (earliestNextT > tmax_box)
-			break;
+			if (tMaxX <= tMaxY && tMaxX <= tMaxZ)
+			{
+				ix += stepX;
+				tMaxX += tDeltaX;
+			}
+			else if (tMaxY <= tMaxZ)
+			{
+				iy += stepY;
+				tMaxY += tDeltaY;
+			}
+			else
+			{
+				iz += stepZ;
+				tMaxZ += tDeltaZ;
+			}
+		}
+	}
+
+check_planes:
+	for (auto s : plane_shapes)
+	{
+		float t_candidate;
+		if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
+						 t_candidate, -1, culling, EPSILON))
+		{
+			if (t_candidate > EPSILON && t_candidate < t_hit)
+			{
+				t_hit = t_candidate;
+				*hit_shape = s;
+				hit_id = -1;
+			}
+		}
 	}
 
 	return (*hit_shape != nullptr);
