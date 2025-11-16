@@ -202,6 +202,7 @@ public:
 		}
 
 		vec3 hit_point_obj;
+		hit_point.store();
 		calculator_m.mult_vec(mi.inv_model, hit_point, hit_point_obj, false);
 
 		vec3 v0, v1, v2;
@@ -229,6 +230,7 @@ public:
 		calculator.mult_scalar(n3, w, t2);
 		calculator.add(n_interp, t2, n_interp);
 		calculator.normalize(n_interp, normal);
+		normal.store();
 		calculator_m.mult_vec(mi.normal, normal, normal, true);
 		calculator.normalize(normal, normal);
 		normal.store();
