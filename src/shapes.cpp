@@ -66,26 +66,34 @@ bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const v
 bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
 					   float &t, int id, bool culling, const float EPSILON) const
 {
+	vec3 rayOrigin_obj, rayDir_obj;
+	vec3 tmp = rayOrigin;
+	tmp.store();
+	calculator_m.mult_vec(inv_model, tmp, rayOrigin_obj, false);
+	tmp = rayDir;
+	tmp.store();
+	calculator_m.mult_vec(inv_model, tmp, rayDir_obj, true);
+
 	vec3 oc;
-	calculator.subs(rayOrigin, center, oc);
+	calculator.subs(rayOrigin_obj, center, oc);
 
-	float b;
-	calculator.dot(oc, rayDir, b);
-
-	float c;
+	float a, b, c;
+	calculator.dot(rayDir_obj, rayDir_obj, a);
+	calculator.dot(oc, rayDir_obj, b);
+	b *= 2.0f;
 	calculator.dot(oc, oc, c);
+	c -= (radius * radius);
 
-	c -= radius * radius;
-
-	float discriminant = b * b - c;
+	float discriminant = b * b - 4 * a * c;
 
 	if (discriminant < 0.0f)
 		return false;
 
 	float sqrtDisc = sqrtf(discriminant);
+	float inv2a = 1.0f / (2.0f * a);
 
-	float t1 = -b - sqrtDisc;
-	float t2 = -b + sqrtDisc;
+	float t1 = (-b - sqrtDisc) * inv2a;
+	float t2 = (-b + sqrtDisc) * inv2a;
 
 	if (t1 > EPSILON)
 		t = t1;

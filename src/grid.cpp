@@ -19,24 +19,32 @@ grid::grid(const std::vector<shape *> *shape_list)
 	if (!shapes || shapes->empty())
 		return;
 
-	const int n_shapes = (int)shapes->size() - (int)plane_shapes.size();
-	const float s = std::cbrt(std::max(1, n_shapes));
-	const float voxels_per_axis = std::max(1.0f, s * 2.0f);
+	int n_shapes = 0;
+
+	for (auto &&i : *shapes)
+	{
+		n_shapes += i->get_ids().size();
+	}
 
 	world_size.store();
 	const float wx = world_size.get_x();
 	const float wy = world_size.get_y();
 	const float wz = world_size.get_z();
-	const float maxW = std::max(wx, std::max(wy, wz));
 
-	int nx = (int)std::max(1.0f, std::floor(voxels_per_axis * (wx / maxW)));
-	int ny = (int)std::max(1.0f, std::floor(voxels_per_axis * (wy / maxW)));
-	int nz = (int)std::max(1.0f, std::floor(voxels_per_axis * (wz / maxW)));
+	const float alpha = 4.0f;
 
-	const int MAX_DIM = 1024;
-	nx = clamp_int(nx, 1, MAX_DIM);
-	ny = clamp_int(ny, 1, MAX_DIM);
-	nz = clamp_int(nz, 1, MAX_DIM);
+	const float n_total_target = std::max(1.0f, alpha * n_shapes);
+
+	const float wbb_volume = wx * wy * wz;
+
+	const float cbrt_n_total = std::cbrt(n_total_target);
+
+	const float cbrt_wbb_volume = std::cbrt(wbb_volume);
+
+	const int N_min = 10;
+	int nx = std::max(N_min, (int)std::floor((wx / cbrt_wbb_volume) * cbrt_n_total));
+	int ny = std::max(N_min, (int)std::floor((wy / cbrt_wbb_volume) * cbrt_n_total));
+	int nz = std::max(N_min, (int)std::floor((wz / cbrt_wbb_volume) * cbrt_n_total));
 
 	my_printf("Grid dimensions: %d %d %d\n", nx, ny, nz);
 

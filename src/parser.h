@@ -8,7 +8,7 @@ class parser
 {
 private:
 	rapidjson::Document d;
-	const char *file_name;
+	std::string file_name;
 	char *json_content;
 	static char *get_json_content(const char *fileName);
 	static void load_ply(simd_vec3 &calculator, const std::string &filename,
@@ -22,7 +22,7 @@ public:
 		free(json_content);
 	}
 	transformations *get_transformations(simd_mat4 &calculator);
-	std::vector<camera> *get_camera(simd_vec3 &calculator);
+	std::vector<camera> *get_camera(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t);
 	std::vector<vec3> *get_vertices();
 	std::vector<material> *get_materials();
 	std::vector<shape *> *get_shapes(simd_vec3 &calculator, simd_mat4 &calculator_m, std::vector<vec3> *vertices, std::vector<material> *materials,
@@ -32,5 +32,5 @@ public:
 	float get_maxrecursiondepth();
 	vec3 get_backgroundcolor();
 	vec3 get_ambientlight();
-	std::vector<point_light> *get_pointlights();
+	std::vector<point_light> *get_pointlights(simd_mat4 &calculator_m, transformations *t);
 };

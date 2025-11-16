@@ -255,18 +255,49 @@ class sphere : public shape
 private:
 	vec3 center;
 	float radius;
+	mat4 model;
+	mat4 inv_model;
+	mat4 normal_m;
 
 public:
 	sphere() = delete;
-	sphere(simd_vec3 &calculator, vec3 *center, float radius, material *mat)
-		: center(*center), radius(radius), shape(mat, shape_type::Sphere)
+	sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, mat4 model,
+		   mat4 inv_model, mat4 normal_m)
+		: center(*center), radius(radius), shape(mat, shape_type::Sphere), model(model), inv_model(inv_model), normal_m(normal_m)
 	{
-		vec3 rvec(radius, radius, radius);
-
+		vec3 rvec(radius);
 		calculator.subs(*center, rvec, box.min);
 		calculator.add(*center, rvec, box.max);
 
-		vec3 pad = vec3(1e-4f);
+		box.min.store();
+		box.max.store();
+
+		vec3 corners[8];
+		corners[0].load(box.min.get_x(), box.min.get_y(), box.min.get_z(), 1.0f);
+		corners[1].load(box.max.get_x(), box.min.get_y(), box.min.get_z(), 1.0f);
+		corners[2].load(box.min.get_x(), box.max.get_y(), box.min.get_z(), 1.0f);
+		corners[3].load(box.max.get_x(), box.max.get_y(), box.min.get_z(), 1.0f);
+		corners[4].load(box.min.get_x(), box.min.get_y(), box.max.get_z(), 1.0f);
+		corners[5].load(box.max.get_x(), box.min.get_y(), box.max.get_z(), 1.0f);
+		corners[6].load(box.min.get_x(), box.max.get_y(), box.max.get_z(), 1.0f);
+		corners[7].load(box.max.get_x(), box.max.get_y(), box.max.get_z(), 1.0f);
+
+		vec3 world_min(FLT_MAX, FLT_MAX, FLT_MAX, 1.0f);
+		vec3 world_max(-FLT_MAX, -FLT_MAX, -FLT_MAX, 1.0f);
+
+		for (int i = 0; i < 8; ++i)
+		{
+			vec3 world_corner;
+			calculator_m.mult_vec(model, corners[i], world_corner, false);
+
+			calculator.min(world_min, world_corner, world_min);
+			calculator.max(world_max, world_corner, world_max);
+		}
+
+		box.min = world_min;
+		box.max = world_max;
+
+		vec3 pad(1e-4f);
 		calculator.subs(box.min, pad, box.min);
 		calculator.add(box.max, pad, box.max);
 
@@ -279,7 +310,17 @@ public:
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal)
 		const override
 	{
-		calculator.subs(hit_point, center, normal);
+		vec3 hit_point_obj;
+		vec3 tmp_hit = hit_point;
+		tmp_hit.store();
+		calculator_m.mult_vec(inv_model, tmp_hit, hit_point_obj, false);
+
+		vec3 normal_obj;
+		calculator.subs(hit_point_obj, center, normal_obj);
+
+		normal_obj.store();
+		calculator_m.mult_vec(normal_m, normal_obj, normal, true);
+
 		calculator.normalize(normal, normal);
 		normal.store();
 	};

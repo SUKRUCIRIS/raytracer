@@ -124,7 +124,7 @@ void parser::load_ply(simd_vec3 &calculator,
 			}
 		}
 
-		if (line == "end_header")
+		if (line.rfind("end_header", 0) == 0)
 			break;
 	}
 

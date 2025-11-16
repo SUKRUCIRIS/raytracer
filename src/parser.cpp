@@ -48,10 +48,45 @@ parser::parser(const char *file_name)
 		my_printf("RapidJSON parse error at offset %zu: %u\n",
 				  d.GetErrorOffset(), d.GetParseError());
 	}
-	this->file_name = file_name;
+	this->file_name = std::string(file_name);
 }
 
-std::vector<camera> *parser::get_camera(simd_vec3 &calculator)
+void processTrans(const rapidjson::Value &obj, simd_mat4 &calculator_m, transformations *t, mat4 &model)
+{
+	if (obj.HasMember("Transformations"))
+	{
+		std::string transformations = obj["Transformations"].GetString();
+
+		std::istringstream iss(transformations);
+		std::vector<std::string> result;
+		std::string word;
+
+		while (iss >> word)
+		{
+			result.push_back(word);
+		}
+
+		for (auto it = result.begin(); it != result.end(); ++it)
+		{
+			const std::string &i = *it;
+			int index = std::stoi(i.substr(1));
+			if (i.starts_with("t"))
+			{
+				calculator_m.mult(t->translations[index - 1], model, model);
+			}
+			else if (i.starts_with("r"))
+			{
+				calculator_m.mult(t->rotations[index - 1], model, model);
+			}
+			else if (i.starts_with("s"))
+			{
+				calculator_m.mult(t->scales[index - 1], model, model);
+			}
+		}
+	}
+};
+
+std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t)
 {
 	std::vector<camera> *res = new std::vector<camera>;
 
@@ -69,6 +104,10 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator)
 		std::string type = "pinhole";
 		if (cam.HasMember("_type"))
 			type = cam["_type"].GetString();
+
+		mat4 model;
+
+		processTrans(cam, calculator_m, t, model);
 
 		if (type == "lookAt")
 		{
@@ -100,9 +139,9 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator)
 			tmp = cam["ImageName"].GetString();
 
 			res->emplace_back(
-				calculator, position_x, position_y, position_z,
+				calculator, calculator_m, position_x, position_y, position_z,
 				gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
-				neardistance, fovY, resx, resy, tmp);
+				neardistance, fovY, resx, resy, tmp, model);
 		}
 		else
 		{
@@ -133,10 +172,10 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator)
 
 			tmp = cam["ImageName"].GetString();
 
-			res->emplace_back(calculator, position_x, position_y, position_z,
+			res->emplace_back(calculator, calculator_m, position_x, position_y, position_z,
 							  gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
 							  neardistance, nearp_left, nearp_right, nearp_bottom, nearp_top,
-							  resx, resy, tmp);
+							  resx, resy, tmp, model);
 		}
 	};
 
@@ -279,41 +318,6 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 	}
 	const auto &objects = d["Scene"]["Objects"];
 
-	auto processTrans = [&](const rapidjson::Value &obj, mat4 &model)
-	{
-		if (obj.HasMember("Transformations"))
-		{
-			std::string transformations = obj["Transformations"].GetString();
-
-			std::istringstream iss(transformations);
-			std::vector<std::string> result;
-			std::string word;
-
-			while (iss >> word)
-			{
-				result.push_back(word);
-			}
-
-			for (auto it = result.begin(); it != result.end(); ++it)
-			{
-				const std::string &i = *it;
-				int index = std::stoi(i.substr(1));
-				if (i.starts_with("t"))
-				{
-					calculator_m.mult(t->translations[index - 1], model, model);
-				}
-				else if (i.starts_with("r"))
-				{
-					calculator_m.mult(t->rotations[index - 1], model, model);
-				}
-				else if (i.starts_with("s"))
-				{
-					calculator_m.mult(t->scales[index - 1], model, model);
-				}
-			}
-		}
-	};
-
 	auto processMesh = [&](const rapidjson::Value &mesh)
 	{
 		if (!mesh.HasMember("Faces") || !(mesh["Faces"].HasMember("_data") || mesh["Faces"].HasMember("_plyFile")))
@@ -325,7 +329,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 		all_mesh_infos *ami = new all_mesh_infos();
 
-		int mesh_id = mesh["_id"].GetInt();
+		int mesh_id = std::stoi(mesh["_id"].GetString());
 
 		m->push_back(ami);
 
@@ -334,7 +338,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 		mat4 model;
 
-		processTrans(mesh, model);
+		processTrans(mesh, calculator_m, t, model);
 
 		m_info.model = model;
 		calculator_m.inverse(model, m_info.inv_model);
@@ -353,81 +357,86 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 			std::filesystem::path fullPath = baseDir / plyName;
 			load_ply(calculator, fullPath.string(), vertices, shapes, &mat, ami);
 		}
-		std::istringstream iss(mesh["Faces"]["_data"].GetString());
-		long long i0, i1, i2;
-		std::vector<std::array<size_t, 3>> tris;
-		while (iss >> i0 >> i1 >> i2)
-		{
-			tris.emplace_back(std::array<size_t, 3>{
-				static_cast<size_t>(i0 - 1),
-				static_cast<size_t>(i1 - 1),
-				static_cast<size_t>(i2 - 1)});
-		}
-
-		if (shadingMode == "smooth")
-		{
-			std::vector<vec3> vertex_normals(vertices->size(), vec3(0.0f, 0.0f, 0.0f));
-
-			for (auto &tri : tris)
-			{
-				vec3 e1, e2, n;
-				calculator.subs(vertices->at(tri[1]), vertices->at(tri[0]), e1);
-				calculator.subs(vertices->at(tri[2]), vertices->at(tri[0]), e2);
-				calculator.cross(e1, e2, n);
-
-				calculator.add(vertex_normals[tri[0]], n, vertex_normals[tri[0]]);
-				calculator.add(vertex_normals[tri[1]], n, vertex_normals[tri[1]]);
-				calculator.add(vertex_normals[tri[2]], n, vertex_normals[tri[2]]);
-			}
-
-			for (auto &vn : vertex_normals)
-				calculator.normalize(vn, vn);
-
-			for (auto &tri : tris)
-			{
-				shapes->push_back(new triangle(
-					calculator,
-					&vertices->at(tri[0]),
-					&vertices->at(tri[1]),
-					&vertices->at(tri[2]),
-					vertex_normals[tri[0]],
-					vertex_normals[tri[1]],
-					vertex_normals[tri[2]],
-					&mat, ami));
-			}
-		}
 		else
 		{
-			for (auto &tri : tris)
+			std::istringstream iss(mesh["Faces"]["_data"].GetString());
+			long long i0, i1, i2;
+			std::vector<std::array<size_t, 3>> tris;
+			while (iss >> i0 >> i1 >> i2)
 			{
-				shapes->push_back(new triangle(
-					calculator,
-					&vertices->at(tri[0]),
-					&vertices->at(tri[1]),
-					&vertices->at(tri[2]),
-					&mat, ami));
+				tris.emplace_back(std::array<size_t, 3>{
+					static_cast<size_t>(i0 - 1),
+					static_cast<size_t>(i1 - 1),
+					static_cast<size_t>(i2 - 1)});
+			}
+
+			if (shadingMode == "smooth")
+			{
+				std::vector<vec3> vertex_normals(vertices->size(), vec3(0.0f, 0.0f, 0.0f));
+
+				for (auto &tri : tris)
+				{
+					vec3 e1, e2, n;
+					calculator.subs(vertices->at(tri[1]), vertices->at(tri[0]), e1);
+					calculator.subs(vertices->at(tri[2]), vertices->at(tri[0]), e2);
+					calculator.cross(e1, e2, n);
+
+					calculator.add(vertex_normals[tri[0]], n, vertex_normals[tri[0]]);
+					calculator.add(vertex_normals[tri[1]], n, vertex_normals[tri[1]]);
+					calculator.add(vertex_normals[tri[2]], n, vertex_normals[tri[2]]);
+				}
+
+				for (auto &vn : vertex_normals)
+					calculator.normalize(vn, vn);
+
+				for (auto &tri : tris)
+				{
+					shapes->push_back(new triangle(
+						calculator,
+						&vertices->at(tri[0]),
+						&vertices->at(tri[1]),
+						&vertices->at(tri[2]),
+						vertex_normals[tri[0]],
+						vertex_normals[tri[1]],
+						vertex_normals[tri[2]],
+						&mat, ami));
+				}
+			}
+			else
+			{
+				for (auto &tri : tris)
+				{
+					shapes->push_back(new triangle(
+						calculator,
+						&vertices->at(tri[0]),
+						&vertices->at(tri[1]),
+						&vertices->at(tri[2]),
+						&mat, ami));
+				}
 			}
 		}
 	};
 
 	auto processMeshInstance = [&](const rapidjson::Value &MeshInstance)
 	{
-		int id = MeshInstance["_id"].GetInt();
-		int base_id = MeshInstance["_baseMeshId"].GetInt();
+		int id = std::stoi(MeshInstance["_id"].GetString());
+		int base_id = std::stoi(MeshInstance["_baseMeshId"].GetString());
 		bool reset = false;
-		if (MeshInstance.HasMember("_resetTransform"))
+		reset = MeshInstance.HasMember("_resetTransform") && (strcmp(MeshInstance["_resetTransform"].GetString(), "true") == 0);
+		material *mat = 0;
+		if (MeshInstance.HasMember("Material"))
 		{
-			reset = MeshInstance["_resetTransform"].GetBool();
+			mat = &materials->at(std::stoi(MeshInstance["Material"].GetString()) - 1);
 		}
-		material &mat = materials->at(std::stoi(MeshInstance["Material"].GetString()) - 1);
 		mat4 model;
-		processTrans(MeshInstance, model);
+		processTrans(MeshInstance, calculator_m, t, model);
 		all_mesh_infos *target = 0;
 		for (auto &&i : *m)
 		{
 			if (i->mesh_infos.contains(base_id))
 			{
 				target = i;
+				break;
 			}
 		}
 		if (target == 0)
@@ -440,10 +449,16 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 			calculator_m.mult(model, target->mesh_infos[base_id].model, model);
 		}
 		mesh_info m_info;
-		m_info.mat = &mat;
+		if (mat == 0)
+		{
+			mat = target->mesh_infos[base_id].mat;
+		}
+		m_info.mat = mat;
+		m_info.model = model;
 		calculator_m.inverse(model, m_info.inv_model);
 		calculator_m.transpose(m_info.inv_model, m_info.normal);
 		target->mesh_infos[id] = m_info;
+		my_printf("Mesh instance id: %d added for base id: %d\n", id, base_id);
 	};
 
 	auto processTriangle = [&](const rapidjson::Value &tri)
@@ -467,7 +482,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 		mat4 model;
 
-		processTrans(tri, model);
+		processTrans(tri, calculator_m, t, model);
 
 		m_info.model = model;
 		calculator_m.inverse(model, m_info.inv_model);
@@ -497,17 +512,21 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 		mat4 model;
 
-		processTrans(sph, model);
+		processTrans(sph, calculator_m, t, model);
 
-		vec3 transformedCenter;
-		calculator_m.mult_vec(model, vertices->at(center_idx - 1), transformedCenter, false);
-		// tbd radius transform
+		mat4 inv;
+
+		calculator_m.inverse(model, inv);
+
+		mat4 normal;
+
+		calculator_m.transpose(inv, normal);
 
 		shapes->push_back(new sphere(
-			calculator,
-			&transformedCenter,
+			calculator, calculator_m,
+			&vertices->at(center_idx - 1),
 			radius,
-			&materials->at(std::stoi(sph["Material"].GetString()) - 1)));
+			&materials->at(std::stoi(sph["Material"].GetString()) - 1), model, inv, normal));
 	};
 
 	auto processPlane = [&](const rapidjson::Value &pl)
@@ -525,7 +544,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 		mat4 model;
 
-		processTrans(pl, model);
+		processTrans(pl, calculator_m, t, model);
 
 		vec3 transformedPoint;
 		calculator_m.mult_vec(model, vertices->at(point_idx - 1), transformedPoint, false);
@@ -731,7 +750,7 @@ vec3 parser::get_ambientlight()
 	return amb;
 }
 
-std::vector<point_light> *parser::get_pointlights()
+std::vector<point_light> *parser::get_pointlights(simd_mat4 &calculator_m, transformations *t)
 {
 	std::vector<point_light> *lights = new std::vector<point_light>();
 
@@ -749,6 +768,9 @@ std::vector<point_light> *parser::get_pointlights()
 		float px, py, pz;
 		posStream >> px >> py >> pz;
 		light.position.load(px, py, pz);
+		mat4 model;
+		processTrans(plNode, calculator_m, t, model);
+		calculator_m.mult_vec(model, light.position, light.position, false);
 
 		tmp = plNode["Intensity"].GetString();
 		std::istringstream intStream(tmp);
@@ -769,6 +791,9 @@ std::vector<point_light> *parser::get_pointlights()
 			float px, py, pz;
 			posStream >> px >> py >> pz;
 			light.position.load(px, py, pz);
+			mat4 model;
+			processTrans(v, calculator_m, t, model);
+			calculator_m.mult_vec(model, light.position, light.position, false);
 
 			tmp = v["Intensity"].GetString();
 			std::istringstream intStream(tmp);
