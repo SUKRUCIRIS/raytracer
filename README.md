@@ -1,3 +1,7 @@
+# Blog
+
+https://blog.sukruciris.com/raytracer.html
+
 # How to Build
 
 ```
