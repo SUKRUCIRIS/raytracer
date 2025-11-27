@@ -23,10 +23,10 @@ private:
 						 const vec3 &hit_point, const vec3 &ray_origin, const shape *min_shape,
 						 vec3 &color) const;
 
-	static void calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I, vec3 &R);
+	static void calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I, vec3 &R, float roughness);
 
 	static bool calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I,
-										float n1, float n2, vec3 &T);
+										float n1, float n2, vec3 &T, float roughness);
 
 public:
 	ray_tracer() = delete;

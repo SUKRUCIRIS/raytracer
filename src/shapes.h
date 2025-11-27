@@ -181,6 +181,7 @@ struct material
 	vec3 AbsorptionCoefficient{0, 0, 0};
 	float RefractionIndex = 0;
 	float AbsorptionIndex = 1;
+	float roughness = 0;
 };
 
 enum shape_type

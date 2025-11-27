@@ -112,18 +112,63 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 	calculator.mult_scalar(color, 0.004f, color);
 }
 
-void ray_tracer::calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I, vec3 &R)
+void add_roughness(simd_vec3 &calculator, vec3 &R, float roughness)
+{
+	R.store();
+
+	vec3 r_prime = R;
+	float abs_x = std::abs(R.get_x());
+	float abs_y = std::abs(R.get_y());
+	float abs_z = std::abs(R.get_z());
+
+	if (abs_x <= abs_y && abs_x <= abs_z)
+	{
+		r_prime.load(1.0f, R.get_y(), R.get_z());
+	}
+	else if (abs_y <= abs_z)
+	{
+		r_prime.load(R.get_x(), 1.0f, R.get_z());
+	}
+	else
+	{
+		r_prime.load(R.get_x(), R.get_y(), 1.0f);
+	}
+
+	vec3 u, v;
+	calculator.cross(R, r_prime, u);
+	calculator.normalize(u, u);
+
+	calculator.cross(R, u, v);
+	float xi1 = get_random_float() - 0.5f;
+	float xi2 = get_random_float() - 0.5f;
+
+	vec3 u_comp, v_comp;
+	calculator.mult_scalar(u, xi1, u_comp);
+	calculator.mult_scalar(v, xi2, v_comp);
+
+	vec3 offset;
+	calculator.add(u_comp, v_comp, offset);
+	calculator.mult_scalar(offset, roughness, offset);
+
+	calculator.add(R, offset, R);
+}
+
+void ray_tracer::calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I, vec3 &R, float roughness)
 {
 	float dot;
 	calculator.dot(I, N, dot);
 
 	calculator.mult_scalar(N, dot * -2.0f, R);
 	calculator.add(I, R, R);
+	if (roughness > 0.0f)
+	{
+		add_roughness(calculator, R, roughness);
+	}
 	calculator.normalize(R, R);
 }
 
 bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I,
-										 float n1, float n2, vec3 &T)
+										 float n1, float n2, vec3 &T, float roughness)
 {
 	float cosi;
 	calculator.dot(I, N, cosi);
@@ -140,6 +185,12 @@ bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, c
 	calculator.mult_scalar(I, eta, term1);
 	calculator.mult_scalar(normal, (eta * cosi - sqrtf(k)), term2);
 	calculator.add(term1, term2, T);
+
+	if (roughness > 0.0f)
+	{
+		add_roughness(calculator, T, roughness);
+	}
+
 	calculator.normalize(T, T);
 
 	return true;
@@ -178,7 +229,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	if (mat->mt == Mirror)
 	{
 		vec3 R;
-		calculate_reflected_dir(calculator, normal, ray_dir, R);
+		calculate_reflected_dir(calculator, normal, ray_dir, R, mat->roughness);
 		vec3 offset;
 		calculator.mult_scalar(normal, shadowrayepsilon, offset);
 		calculator.add(hit_point, offset, hit_point);
@@ -192,7 +243,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	else if (mat->mt == Conductor)
 	{
 		vec3 R;
-		calculate_reflected_dir(calculator, normal, ray_dir, R);
+		calculate_reflected_dir(calculator, normal, ray_dir, R, mat->roughness);
 
 		float cosTheta;
 		calculator.dot(ray_dir, normal, cosTheta);
@@ -272,7 +323,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		float F = r0 + (1.0f - r0) * powf(1.0f - cosI, 5.0f);
 
 		vec3 reflectDir, reflectColor;
-		calculate_reflected_dir(calculator, normal, ray_dir, reflectDir);
+		calculate_reflected_dir(calculator, normal, ray_dir, reflectDir, mat->roughness);
 		vec3 offsetR;
 		calculator.mult_scalar(normal, shadowrayepsilon, offsetR);
 		calculator.add(hit_point, offsetR, offsetR);
@@ -281,7 +332,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		calculator.mult(reflectColor, mat->MirrorReflectance, reflectColor);
 
 		vec3 refractDir, refractColor;
-		bool refracts = calculate_refracted_dir(calculator, normal, ray_dir, n1, n2, refractDir);
+		bool refracts = calculate_refracted_dir(calculator, normal, ray_dir, n1, n2, refractDir, mat->roughness);
 
 		if (refracts)
 		{

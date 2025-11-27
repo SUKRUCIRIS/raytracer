@@ -349,6 +349,10 @@ std::vector<material> *parser::get_materials()
 		{
 			new_material.AbsorptionIndex = std::stof(mat_json["AbsorptionIndex"].GetString());
 		}
+		if (mat_json.HasMember("Roughness"))
+		{
+			new_material.roughness = std::stof(mat_json["Roughness"].GetString());
+		}
 
 		materials->emplace_back(new_material);
 	};
