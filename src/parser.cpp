@@ -116,6 +116,8 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calcul
 			float up_x, up_y, up_z;
 			float neardistance;
 			float fovY;
+			int NumSamples;
+			float FocusDistance, ApertureSize;
 			int resx, resy;
 
 			tmp = cam["Position"].GetString();
@@ -136,12 +138,42 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calcul
 			tmp = cam["ImageResolution"].GetString();
 			sscanf(tmp.c_str(), "%d %d", &resx, &resy);
 
+			if (cam.HasMember("NumSamples"))
+			{
+				tmp = cam["NumSamples"].GetString();
+				sscanf(tmp.c_str(), "%d", &NumSamples);
+			}
+			else
+			{
+				NumSamples = 1;
+			}
+
+			if (cam.HasMember("FocusDistance"))
+			{
+				tmp = cam["FocusDistance"].GetString();
+				sscanf(tmp.c_str(), "%f", &FocusDistance);
+			}
+			else
+			{
+				FocusDistance = 0;
+			}
+
+			if (cam.HasMember("ApertureSize"))
+			{
+				tmp = cam["ApertureSize"].GetString();
+				sscanf(tmp.c_str(), "%f", &ApertureSize);
+			}
+			else
+			{
+				ApertureSize = 0;
+			}
+
 			tmp = cam["ImageName"].GetString();
 
 			res->emplace_back(
 				calculator, calculator_m, position_x, position_y, position_z,
 				gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
-				neardistance, fovY, resx, resy, tmp, model);
+				neardistance, fovY, resx, resy, NumSamples, FocusDistance, ApertureSize, tmp, model);
 		}
 		else
 		{
@@ -150,6 +182,8 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calcul
 			float up_x, up_y, up_z;
 			float nearp_left, nearp_right, nearp_bottom, nearp_top;
 			float neardistance;
+			int NumSamples;
+			float FocusDistance, ApertureSize;
 			int resx, resy;
 
 			tmp = cam["Position"].GetString();
@@ -170,12 +204,42 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calcul
 			tmp = cam["ImageResolution"].GetString();
 			sscanf(tmp.c_str(), "%d %d", &resx, &resy);
 
+			if (cam.HasMember("NumSamples"))
+			{
+				tmp = cam["NumSamples"].GetString();
+				sscanf(tmp.c_str(), "%d", &NumSamples);
+			}
+			else
+			{
+				NumSamples = 1;
+			}
+
+			if (cam.HasMember("FocusDistance"))
+			{
+				tmp = cam["FocusDistance"].GetString();
+				sscanf(tmp.c_str(), "%f", &FocusDistance);
+			}
+			else
+			{
+				FocusDistance = 0;
+			}
+
+			if (cam.HasMember("ApertureSize"))
+			{
+				tmp = cam["ApertureSize"].GetString();
+				sscanf(tmp.c_str(), "%f", &ApertureSize);
+			}
+			else
+			{
+				ApertureSize = 0;
+			}
+
 			tmp = cam["ImageName"].GetString();
 
 			res->emplace_back(calculator, calculator_m, position_x, position_y, position_z,
 							  gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
 							  neardistance, nearp_left, nearp_right, nearp_bottom, nearp_top,
-							  resx, resy, tmp, model);
+							  resx, resy, NumSamples, FocusDistance, ApertureSize, tmp, model);
 		}
 	};
 
@@ -750,58 +814,97 @@ vec3 parser::get_ambientlight()
 	return amb;
 }
 
-std::vector<point_light> *parser::get_pointlights(simd_mat4 &calculator_m, transformations *t)
+std::vector<Light *> *parser::get_pointlights(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t)
 {
-	std::vector<point_light> *lights = new std::vector<point_light>();
+	std::vector<Light *> *lights = new std::vector<Light *>();
 
-	if (!d["Scene"].HasMember("Lights") || !d["Scene"]["Lights"].HasMember("PointLight"))
+	if (!d["Scene"].HasMember("Lights"))
 		return lights;
 
-	const auto &plNode = d["Scene"]["Lights"]["PointLight"];
-
-	if (plNode.IsObject())
+	if (d["Scene"]["Lights"].HasMember("PointLight"))
 	{
-		point_light light;
+		const auto &plNode = d["Scene"]["Lights"]["PointLight"];
 
-		std::string tmp = plNode["Position"].GetString();
-		std::istringstream posStream(tmp);
-		float px, py, pz;
-		posStream >> px >> py >> pz;
-		light.position.load(px, py, pz);
-		mat4 model;
-		processTrans(plNode, calculator_m, t, model);
-		calculator_m.mult_vec(model, light.position, light.position, false);
-
-		tmp = plNode["Intensity"].GetString();
-		std::istringstream intStream(tmp);
-		float ix, iy, iz;
-		intStream >> ix >> iy >> iz;
-		light.intensity.load(ix, iy, iz);
-
-		lights->push_back(light);
-	}
-	else if (plNode.IsArray())
-	{
-		for (auto &v : plNode.GetArray())
+		auto processPL = [&](const rapidjson::Value &plNode)
 		{
-			point_light light;
+			vec3 position, intensity;
 
-			std::string tmp = v["Position"].GetString();
+			std::string tmp = plNode["Position"].GetString();
 			std::istringstream posStream(tmp);
 			float px, py, pz;
 			posStream >> px >> py >> pz;
-			light.position.load(px, py, pz);
+			position.load(px, py, pz);
 			mat4 model;
-			processTrans(v, calculator_m, t, model);
-			calculator_m.mult_vec(model, light.position, light.position, false);
+			processTrans(plNode, calculator_m, t, model);
+			calculator_m.mult_vec(model, position, position, false);
 
-			tmp = v["Intensity"].GetString();
+			tmp = plNode["Intensity"].GetString();
 			std::istringstream intStream(tmp);
-			float ix, iy, iz;
-			intStream >> ix >> iy >> iz;
-			light.intensity.load(ix, iy, iz);
+			intStream >> px >> py >> pz;
+			intensity.load(px, py, pz);
+
+			PointLight *light = new PointLight(position, intensity);
 
 			lights->push_back(light);
+		};
+
+		if (plNode.IsObject())
+		{
+			processPL(plNode);
+		}
+		else if (plNode.IsArray())
+		{
+			for (auto &v : plNode.GetArray())
+			{
+				processPL(v);
+			}
+		}
+	}
+
+	if (d["Scene"]["Lights"].HasMember("AreaLight"))
+	{
+		const auto &alNode = d["Scene"]["Lights"]["AreaLight"];
+
+		auto processAL = [&](const rapidjson::Value &plNode)
+		{
+			vec3 position, normal, radiance;
+
+			std::string tmp = plNode["Position"].GetString();
+			std::istringstream posStream(tmp);
+			float px, py, pz;
+			posStream >> px >> py >> pz;
+			position.load(px, py, pz);
+			mat4 model;
+			processTrans(plNode, calculator_m, t, model);
+			calculator_m.mult_vec(model, position, position, false);
+
+			tmp = plNode["Normal"].GetString();
+			std::istringstream nStream(tmp);
+			nStream >> px >> py >> pz;
+			normal.load(px, py, pz);
+
+			tmp = plNode["Radiance"].GetString();
+			std::istringstream rStream(tmp);
+			rStream >> px >> py >> pz;
+			radiance.load(px, py, pz);
+
+			px = std::stof(plNode["Size"].GetString());
+
+			AreaLight *light = new AreaLight(calculator, position, normal, px, radiance);
+
+			lights->push_back(light);
+		};
+
+		if (alNode.IsObject())
+		{
+			processAL(alNode);
+		}
+		else if (alNode.IsArray())
+		{
+			for (auto &v : alNode.GetArray())
+			{
+				processAL(v);
+			}
 		}
 	}
 

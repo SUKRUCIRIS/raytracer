@@ -12,10 +12,9 @@ private:
 	const float intersectionepsilon;
 	const float shadowrayepsilon;
 	const vec3 ambientlight;
-	const std::vector<point_light> *point_lights = 0;
+	std::vector<Light *> *lights = 0;
 	const vec3 backgroundcolor;
 	const float max_depth;
-	bool use_grid;
 
 	void trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
 				   vec3 &color, const bool culling, int depth) const;
@@ -35,17 +34,14 @@ public:
 			   const float &intersectionepsilon,
 			   const float &shadowrayepsilon,
 			   const vec3 &ambientlight,
-			   const std::vector<point_light> *point_lights,
+			   std::vector<Light *> *lights,
 			   const vec3 &backgroundcolor,
-			   const float &max_depth, bool use_grid) : shapes(shapes), intersectionepsilon(intersectionepsilon),
-														shadowrayepsilon(shadowrayepsilon), ambientlight(ambientlight),
-														point_lights(point_lights), backgroundcolor(backgroundcolor),
-														max_depth(max_depth), use_grid(use_grid)
+			   const float &max_depth) : shapes(shapes), intersectionepsilon(intersectionepsilon),
+										 shadowrayepsilon(shadowrayepsilon), ambientlight(ambientlight),
+										 lights(lights), backgroundcolor(backgroundcolor),
+										 max_depth(max_depth)
 	{
-		if (use_grid)
-		{
-			gridx = new grid(shapes);
-		}
+		gridx = new grid(shapes);
 	};
 	~ray_tracer()
 	{

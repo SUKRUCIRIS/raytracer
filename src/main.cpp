@@ -182,12 +182,12 @@ void process_file(const char *filename, int thread_count)
 
 	vec3 ambientlight = p.get_ambientlight();
 
-	auto point_lights = p.get_pointlights(mat_calc, transformations);
+	auto point_lights = p.get_pointlights(calculator, mat_calc, transformations);
 
 	stbi_flip_vertically_on_write(1);
 
 	auto rt = new ray_tracer(shapes, intersectionepsilon, shadowrayepsilon, ambientlight,
-							 point_lights, backgroundcolor, maxdepth, true);
+							 point_lights, backgroundcolor, maxdepth);
 
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -197,34 +197,73 @@ void process_file(const char *filename, int thread_count)
 	{
 		my_printf("%s started\n", camera.output.c_str());
 		start = std::chrono::high_resolution_clock::now();
-		unsigned char *output = new unsigned char[camera.resx * camera.resy * 3];
-		auto ray_thread = [rt, camera, output](int index_start, int index_end, bool print, int t)
+
+		int total_pixels = camera.resx * camera.resy;
+		unsigned char *output = new unsigned char[total_pixels * 3];
+
+		std::atomic<int> next_scanline(0);
+
+		auto ray_thread = [rt, &camera, output, total_pixels, &next_scanline](int t) mutable
 		{
 			simd_vec3 calculatorp;
 			simd_mat4 calculator_m(calculatorp);
-			for (size_t index = index_start; index < camera.ray_dirs.size() && index < index_end; index++)
+
+			while (true)
 			{
-				rt->trace(calculatorp, calculator_m, camera.position, camera.ray_dirs.at(index), index, false, output);
-				if (print && index % 5000 == 0)
+				int j = next_scanline++;
+				if (j % 100 == 0)
 				{
-					my_printf("Thread 0: %d/%d\n", index, index_end);
+					my_printf("Row %d\n", j);
+				}
+
+				if (j >= camera.resy)
+					break;
+
+				for (int i = 0; i < camera.resx; ++i)
+				{
+					int index = j * camera.resx + i;
+
+					std::vector<camera::sample> samples = camera.get_samples(calculatorp, i, j);
+
+					float r_acc = 0.0f;
+					float g_acc = 0.0f;
+					float b_acc = 0.0f;
+
+					for (const auto &sample : samples)
+					{
+						unsigned char temp_color[3];
+
+						rt->trace(calculatorp, calculator_m, sample.position, sample.direction, 0, false, temp_color);
+
+						r_acc += temp_color[0];
+						g_acc += temp_color[1];
+						b_acc += temp_color[2];
+					}
+
+					float num_samples = static_cast<float>(samples.size());
+					r_acc /= num_samples;
+					g_acc /= num_samples;
+					b_acc /= num_samples;
+
+					int pixel_index = index * 3;
+					output[pixel_index + 0] = (unsigned char)(r_acc > 255 ? 255 : r_acc);
+					output[pixel_index + 1] = (unsigned char)(g_acc > 255 ? 255 : g_acc);
+					output[pixel_index + 2] = (unsigned char)(b_acc > 255 ? 255 : b_acc);
 				}
 			}
-			my_printf("Thread %d is done\n", t);
 		};
-		int index_count_per_thread = camera.ray_dirs.size() / thread_count;
-		index_count_per_thread++;
-		int index_start = 0;
+
 		std::thread *ths = new std::thread[thread_count];
 		for (int i = 0; i < thread_count; i++)
 		{
-			ths[i] = std::thread(ray_thread, index_start, index_start + index_count_per_thread, i == 0, i);
-			index_start += index_count_per_thread;
+			ths[i] = std::thread(ray_thread, i);
 		}
+
 		for (int i = 0; i < thread_count; i++)
 		{
 			ths[i].join();
 		}
+
 		end = std::chrono::high_resolution_clock::now();
 		duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 		my_printf("%s done: %d ms\n", camera.output.c_str(), duration.count());

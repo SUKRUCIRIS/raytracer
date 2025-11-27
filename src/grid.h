@@ -36,5 +36,6 @@ public:
 	~grid();
 
 	bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-				   float &t_hit, shape **hit_shape, int &hit_id, bool culling = true, const float EPSILON = 1e-6f) const;
+				   float &t_hit, shape **hit_shape, int &hit_id, bool culling = true, const float EPSILON = 1e-6f,
+				   bool any_hit = false, float stop_t = 1e30f) const;
 };

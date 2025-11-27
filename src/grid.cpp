@@ -31,17 +31,14 @@ grid::grid(const std::vector<shape *> *shape_list)
 	const float wy = world_size.get_y();
 	const float wz = world_size.get_z();
 
-	const float alpha = 4.0f;
+	const float alpha = 10.0f;
 
 	const float n_total_target = std::max(1.0f, alpha * n_shapes);
-
 	const float wbb_volume = wx * wy * wz;
-
 	const float cbrt_n_total = std::cbrt(n_total_target);
-
 	const float cbrt_wbb_volume = std::cbrt(wbb_volume);
 
-	const int N_min = 10;
+	const int N_min = 2;
 	int nx = std::max(N_min, (int)std::floor((wx / cbrt_wbb_volume) * cbrt_n_total));
 	int ny = std::max(N_min, (int)std::floor((wy / cbrt_wbb_volume) * cbrt_n_total));
 	int nz = std::max(N_min, (int)std::floor((wz / cbrt_wbb_volume) * cbrt_n_total));
@@ -228,28 +225,34 @@ bool grid::intersect(simd_vec3 &calculator,
 					 shape **hit_shape,
 					 int &hit_id,
 					 bool culling,
-					 const float EPSILON) const
+					 const float EPSILON,
+					 bool any_hit,
+					 float stop_t) const
 {
-	t_hit = std::numeric_limits<float>::infinity();
+	t_hit = stop_t;
 	*hit_shape = nullptr;
 	hit_id = -1;
 
-	if (!shapes || shapes->empty() || !cells)
+	for (auto s : plane_shapes)
 	{
-		for (auto s : plane_shapes)
+		float t_candidate;
+		if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
+						 t_candidate, -1, culling, EPSILON))
 		{
-			float t_candidate;
-			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-							 t_candidate, -1, culling, EPSILON))
+			if (t_candidate > EPSILON && t_candidate < t_hit)
 			{
-				if (t_candidate > EPSILON && t_candidate < t_hit)
-				{
-					t_hit = t_candidate;
-					*hit_shape = s;
-					hit_id = -1;
-				}
+				t_hit = t_candidate;
+				*hit_shape = s;
+				hit_id = -1;
+
+				if (any_hit)
+					return true;
 			}
 		}
+	}
+
+	if (!shapes || shapes->empty() || !cells)
+	{
 		return (*hit_shape != nullptr);
 	}
 
@@ -264,20 +267,11 @@ bool grid::intersect(simd_vec3 &calculator,
 
 	if (!aabb_hit)
 	{
-		for (auto s : plane_shapes)
-		{
-			float t_candidate;
-			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-							 t_candidate, -1, culling, EPSILON))
-			{
-				if (t_candidate > EPSILON && t_candidate < t_hit)
-				{
-					t_hit = t_candidate;
-					*hit_shape = s;
-					hit_id = -1;
-				}
-			}
-		}
+		return (*hit_shape != nullptr);
+	}
+
+	if (tmin_box > t_hit)
+	{
 		return (*hit_shape != nullptr);
 	}
 
@@ -302,106 +296,97 @@ bool grid::intersect(simd_vec3 &calculator,
 					t_hit = t_candidate;
 					*hit_shape = s;
 					hit_id = id;
+					if (any_hit)
+						return true;
 				}
 			}
 		}
+		return (*hit_shape != nullptr);
 	}
-	else
+
+	float t = std::max(tmin_box, 0.0f);
+
+	vec3 pos;
+	calculator.mult_scalar(rd, t, pos);
+	calculator.add(ro, pos, pos);
+	pos.store();
+
+	int ix = get_cell_index(pos.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
+	int iy = get_cell_index(pos.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
+	int iz = get_cell_index(pos.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
+
+	const int stepX = (rd.get_x() > 0.0f) ? 1 : ((rd.get_x() < 0.0f) ? -1 : 0);
+	const int stepY = (rd.get_y() > 0.0f) ? 1 : ((rd.get_y() < 0.0f) ? -1 : 0);
+	const int stepZ = (rd.get_z() > 0.0f) ? 1 : ((rd.get_z() < 0.0f) ? -1 : 0);
+
+	const float cellSizeX = world_size.get_x() / (float)nx;
+	const float cellSizeY = world_size.get_y() / (float)ny;
+	const float cellSizeZ = world_size.get_z() / (float)nz;
+
+	const float INF = std::numeric_limits<float>::infinity();
+
+	const float invDirX = 1.0f / rd.get_x();
+	const float invDirY = 1.0f / rd.get_y();
+	const float invDirZ = 1.0f / rd.get_z();
+
+	float tMaxX = (stepX == 0) ? INF : get_t_max(ro.get_x(), ix, stepX, cellSizeX, bounds.min.get_x(), invDirX);
+	float tMaxY = (stepY == 0) ? INF : get_t_max(ro.get_y(), iy, stepY, cellSizeY, bounds.min.get_y(), invDirY);
+	float tMaxZ = (stepZ == 0) ? INF : get_t_max(ro.get_z(), iz, stepZ, cellSizeZ, bounds.min.get_z(), invDirZ);
+
+	const float tDeltaX = (stepX == 0) ? INF : (cellSizeX * fabs(invDirX));
+	const float tDeltaY = (stepY == 0) ? INF : (cellSizeY * fabs(invDirY));
+	const float tDeltaZ = (stepZ == 0) ? INF : (cellSizeZ * fabs(invDirZ));
+
+	while (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
 	{
-		float t = std::max(tmin_box, 0.0f);
-		vec3 pos;
-		calculator.mult_scalar(rd, t, pos);
-		calculator.add(ro, pos, pos);
-		pos.store();
+		const size_t cellIndex = (size_t)ix + (size_t)nx * ((size_t)iy + (size_t)ny * (size_t)iz);
+		const auto &cell = cells[cellIndex];
 
-		int ix = get_cell_index(pos.get_x(), bounds.min.get_x(), inv_cell_size.get_x(), grid_dim.get_x());
-		int iy = get_cell_index(pos.get_y(), bounds.min.get_y(), inv_cell_size.get_y(), grid_dim.get_y());
-		int iz = get_cell_index(pos.get_z(), bounds.min.get_z(), inv_cell_size.get_z(), grid_dim.get_z());
-
-		const int stepX = (rd.get_x() > 0.0f) ? 1 : ((rd.get_x() < 0.0f) ? -1 : 0);
-		const int stepY = (rd.get_y() > 0.0f) ? 1 : ((rd.get_y() < 0.0f) ? -1 : 0);
-		const int stepZ = (rd.get_z() > 0.0f) ? 1 : ((rd.get_z() < 0.0f) ? -1 : 0);
-
-		const float cellSizeX = world_size.get_x() / (float)nx;
-		const float cellSizeY = world_size.get_y() / (float)ny;
-		const float cellSizeZ = world_size.get_z() / (float)nz;
-
-		const float INF = std::numeric_limits<float>::infinity();
-
-		const float invDirX = 1.0f / rd.get_x();
-		const float invDirY = 1.0f / rd.get_y();
-		const float invDirZ = 1.0f / rd.get_z();
-
-		float tMaxX = (stepX == 0) ? INF : get_t_max(ro.get_x(), ix, stepX, cellSizeX, bounds.min.get_x(), invDirX);
-		float tMaxY = (stepY == 0) ? INF : get_t_max(ro.get_y(), iy, stepY, cellSizeY, bounds.min.get_y(), invDirY);
-		float tMaxZ = (stepZ == 0) ? INF : get_t_max(ro.get_z(), iz, stepZ, cellSizeZ, bounds.min.get_z(), invDirZ);
-
-		const float tDeltaX = (stepX == 0) ? INF : (cellSizeX * fabs(invDirX));
-		const float tDeltaY = (stepY == 0) ? INF : (cellSizeY * fabs(invDirY));
-		const float tDeltaZ = (stepZ == 0) ? INF : (cellSizeZ * fabs(invDirZ));
-
-		while (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
+		for (size_t i = 0; i < cell.shapes.size(); ++i)
 		{
-			const size_t cellIndex = (size_t)ix + (size_t)nx * ((size_t)iy + (size_t)ny * (size_t)iz);
-			const auto &cell = cells[cellIndex];
+			auto s = cell.shapes[i];
+			int id = cell.ids[i];
 
-			for (size_t i = 0; i < cell.shapes.size(); ++i)
+			float t_candidate;
+			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
+							 t_candidate, id, culling, EPSILON))
 			{
-				auto s = cell.shapes[i];
-				int id = cell.ids[i];
-
-				float t_candidate;
-				if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-								 t_candidate, id, culling, EPSILON))
+				if (t_candidate > EPSILON && t_candidate < t_hit)
 				{
-					if (t_candidate > EPSILON && t_candidate < t_hit)
-					{
-						t_hit = t_candidate;
-						*hit_shape = s;
-						hit_id = id;
-					}
+					t_hit = t_candidate;
+					*hit_shape = s;
+					hit_id = id;
+					if (any_hit)
+						return true;
 				}
 			}
-
-			const float earliestNextT = std::min({tMaxX, tMaxY, tMaxZ});
-
-			if (*hit_shape && t_hit < earliestNextT)
-				break;
-
-			if (earliestNextT > tmax_box)
-				break;
-
-			if (tMaxX <= tMaxY && tMaxX <= tMaxZ)
-			{
-				ix += stepX;
-				tMaxX += tDeltaX;
-			}
-			else if (tMaxY <= tMaxZ)
-			{
-				iy += stepY;
-				tMaxY += tDeltaY;
-			}
-			else
-			{
-				iz += stepZ;
-				tMaxZ += tDeltaZ;
-			}
 		}
-	}
 
-check_planes:
-	for (auto s : plane_shapes)
-	{
-		float t_candidate;
-		if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-						 t_candidate, -1, culling, EPSILON))
+		const float earliestNextT = std::min({tMaxX, tMaxY, tMaxZ});
+
+		if (*hit_shape && t_hit < earliestNextT)
+			break;
+
+		if (earliestNextT > tmax_box)
+			break;
+
+		if (earliestNextT > t_hit)
+			break;
+
+		if (tMaxX <= tMaxY && tMaxX <= tMaxZ)
 		{
-			if (t_candidate > EPSILON && t_candidate < t_hit)
-			{
-				t_hit = t_candidate;
-				*hit_shape = s;
-				hit_id = -1;
-			}
+			ix += stepX;
+			tMaxX += tDeltaX;
+		}
+		else if (tMaxY <= tMaxZ)
+		{
+			iy += stepY;
+			tMaxY += tDeltaY;
+		}
+		else
+		{
+			iz += stepZ;
+			tMaxZ += tDeltaZ;
 		}
 	}
 
