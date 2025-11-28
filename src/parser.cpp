@@ -412,6 +412,14 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		calculator_m.inverse(model, m_info.inv_model);
 		calculator_m.transpose(m_info.inv_model, m_info.normal);
 
+		if (mesh.HasMember("MotionBlur"))
+		{
+			float px, py, pz;
+			std::istringstream intStream(mesh["MotionBlur"].GetString());
+			intStream >> px >> py >> pz;
+			m_info.motionblur.load(px, py, pz);
+		}
+
 		ami->mesh_infos[mesh_id] = m_info;
 
 		std::string shadingMode = "flat";
@@ -525,6 +533,15 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		m_info.model = model;
 		calculator_m.inverse(model, m_info.inv_model);
 		calculator_m.transpose(m_info.inv_model, m_info.normal);
+
+		if (MeshInstance.HasMember("MotionBlur"))
+		{
+			float px, py, pz;
+			std::istringstream intStream(MeshInstance["MotionBlur"].GetString());
+			intStream >> px >> py >> pz;
+			m_info.motionblur.load(px, py, pz);
+		}
+
 		target->mesh_infos[id] = m_info;
 		my_printf("Mesh instance id: %d added for base id: %d\n", id, base_id);
 	};

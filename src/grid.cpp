@@ -221,6 +221,7 @@ bool grid::intersect(simd_vec3 &calculator,
 					 simd_mat4 &calculator_m,
 					 const vec3 &rayOrigin,
 					 const vec3 &rayDir,
+					 float raytime,
 					 float &t_hit,
 					 shape **hit_shape,
 					 int &hit_id,
@@ -237,7 +238,7 @@ bool grid::intersect(simd_vec3 &calculator,
 	{
 		float t_candidate;
 		if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-						 t_candidate, -1, culling, EPSILON))
+						 t_candidate, -1, raytime, culling, EPSILON))
 		{
 			if (t_candidate > EPSILON && t_candidate < t_hit)
 			{
@@ -289,7 +290,7 @@ bool grid::intersect(simd_vec3 &calculator,
 
 			float t_candidate;
 			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-							 t_candidate, id, culling, EPSILON))
+							 t_candidate, id, raytime, culling, EPSILON))
 			{
 				if (t_candidate > EPSILON && t_candidate < t_hit)
 				{
@@ -349,7 +350,7 @@ bool grid::intersect(simd_vec3 &calculator,
 
 			float t_candidate;
 			if (s->intersect(calculator, calculator_m, rayOrigin, rayDir,
-							 t_candidate, id, culling, EPSILON))
+							 t_candidate, id, raytime, culling, EPSILON))
 			{
 				if (t_candidate > EPSILON && t_candidate < t_hit)
 				{

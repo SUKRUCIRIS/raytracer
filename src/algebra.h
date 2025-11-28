@@ -9,7 +9,7 @@ struct alignas(16) vec3
 {
 public:
 	friend class simd_vec3;
-	vec3() : vec(_mm_setzero_ps()) {};
+	vec3() : vec(_mm_setzero_ps()), x(0), y(0), z(0), padding(0) {};
 	vec3(float a) : x(a), y(a), z(a), vec(_mm_load_ps(&this->x)) {};
 	vec3(float a, float b, float c) : x(a), y(b), z(c), vec(_mm_load_ps(&this->x)) {};
 	vec3(float a, float b, float c, float d) : x(a), y(b), z(c), padding(d), vec(_mm_load_ps(&this->x)) {};

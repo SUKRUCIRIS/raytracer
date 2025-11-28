@@ -2,12 +2,19 @@
 #include <math.h>
 
 bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-						 float &t, int id, bool culling, const float EPSILON) const
+						 float &t, int id, float time, bool culling, const float EPSILON) const
 {
 
 	const mesh_info &mi = m->mesh_infos[id];
+
+	vec3 offset;
+	calculator.mult_scalar(mi.motionblur, time, offset);
+
+	vec3 moved_origin;
+	calculator.subs(rayOrigin, offset, moved_origin);
+
 	vec3 rayOrigin_obj, rayDir_obj;
-	vec3 tmp = rayOrigin;
+	vec3 tmp = moved_origin;
 	tmp.store();
 	calculator_m.mult_vec(mi.inv_model, tmp, rayOrigin_obj, false);
 	tmp = rayDir;
@@ -64,7 +71,7 @@ bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const v
 }
 
 bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-					   float &t, int id, bool culling, const float EPSILON) const
+					   float &t, int id, float time, bool culling, const float EPSILON) const
 {
 	vec3 rayOrigin_obj, rayDir_obj;
 	vec3 tmp = rayOrigin;
@@ -106,7 +113,7 @@ bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec
 }
 
 bool plane::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-					  float &t, int id, bool culling, const float EPSILON) const
+					  float &t, int id, float time, bool culling, const float EPSILON) const
 {
 	float denom;
 	calculator.dot(normal, rayDir, denom);

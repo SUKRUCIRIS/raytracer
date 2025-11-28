@@ -197,6 +197,7 @@ struct mesh_info
 	mat4 inv_model;
 	mat4 normal;
 	material *mat;
+	vec3 motionblur;
 };
 
 struct all_mesh_infos
@@ -217,7 +218,7 @@ public:
 	virtual material *getMaterial(int id) const { return mat; };
 	shape_type get_shapetype() const { return t; };
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-						   float &t, int id, bool culling = true, const float EPSILON = 1e-6f) const = 0;
+						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const = 0;
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal) const = 0;
 	virtual void getBoundingBox(int id, simd_vec3 &calculator, simd_mat4 &calculator_m, aabb &box) const { box = this->box; };
 	virtual std::vector<int> get_ids()
@@ -321,6 +322,13 @@ public:
 		calculator.max(v0, v1, box.max);
 		calculator.max(box.max, v2, box.max);
 
+		vec3 min_moving, max_moving;
+		calculator.add(box.min, mi.motionblur, min_moving);
+		calculator.add(box.max, mi.motionblur, max_moving);
+
+		calculator.min(box.min, min_moving, box.min);
+		calculator.max(box.max, max_moving, box.max);
+
 		vec3 pad = vec3(1e-4f);
 		calculator.subs(box.min, pad, box.min);
 		calculator.add(box.max, pad, box.max);
@@ -375,7 +383,7 @@ public:
 		normal.store();
 	};
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-						   float &t, int id, bool culling = true, const float EPSILON = 1e-6f) const override;
+						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const override;
 	virtual std::vector<int> get_ids()
 		const override
 	{
@@ -447,7 +455,7 @@ public:
 	};
 	vec3 get_center() const { return center; };
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-						   float &t, int id, bool culling = true, const float EPSILON = 1e-6f) const override;
+						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const override;
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal)
 		const override
 	{
@@ -485,5 +493,5 @@ public:
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal)
 		const override { normal = this->normal; };
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
-						   float &t, int id, bool culling = true, const float EPSILON = 1e-6f) const override;
+						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const override;
 };

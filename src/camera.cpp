@@ -140,6 +140,7 @@ std::vector<camera::sample> camera::get_samples(simd_vec3 &calculator, int i, in
 		s.direction = ray_dir;
 		s.position.store();
 		s.direction.store();
+		s.time = get_random_float();
 
 		samples.push_back(s);
 		return samples;
@@ -212,6 +213,8 @@ std::vector<camera::sample> camera::get_samples(simd_vec3 &calculator, int i, in
 
 			s.position.store();
 			s.direction.store();
+
+			s.time = get_random_float();
 
 			samples.push_back(s);
 		}

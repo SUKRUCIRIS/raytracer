@@ -19,6 +19,7 @@ public:
 	{
 		vec3 direction;
 		vec3 position;
+		float time;
 	};
 	vec3 center;
 	camera(simd_vec3 &calculator, simd_mat4 &calculator_m, float position_x, float position_y, float position_z,

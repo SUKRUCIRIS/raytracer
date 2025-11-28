@@ -233,7 +233,7 @@ void process_file(const char *filename, int thread_count)
 					{
 						unsigned char temp_color[3];
 
-						rt->trace(calculatorp, calculator_m, sample.position, sample.direction, 0, false, temp_color);
+						rt->trace(calculatorp, calculator_m, sample.position, sample.direction, 0, sample.time, false, temp_color);
 
 						r_acc += temp_color[0];
 						g_acc += temp_color[1];
