@@ -339,7 +339,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 			vec3 offsetT;
 			calculator.mult_scalar(normal, -shadowrayepsilon, offsetT);
 			calculator.add(hit_point, offsetT, offsetT);
-			trace_rec(calculator, calculator_m, offsetT, refractDir, refractColor, raytime, culling, depth + 1);
+			trace_rec(calculator, calculator_m, offsetT, refractDir, refractColor, raytime, false, depth + 1);
 
 			if (!entering)
 			{
