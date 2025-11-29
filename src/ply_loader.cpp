@@ -52,6 +52,13 @@ static int8_t read_int8(std::ifstream &f)
 	return v;
 }
 
+static double read_double(std::ifstream &f)
+{
+	double v;
+	f.read(reinterpret_cast<char *>(&v), sizeof(double));
+	return v;
+}
+
 void parser::load_ply(simd_vec3 &calculator,
 					  const std::string &filename,
 					  std::vector<vec3> *vertices,
@@ -72,6 +79,9 @@ void parser::load_ply(simd_vec3 &calculator,
 	std::vector<std::pair<std::string, std::string>> vertexProperties;
 
 	std::string format = "ascii";
+	bool has_normals = false;
+
+	std::string current_element = "";
 
 	while (std::getline(file, line))
 	{
@@ -87,60 +97,9 @@ void parser::load_ply(simd_vec3 &calculator,
 			s = s.substr(a, b - a + 1);
 		};
 		trim(line);
-		if (line.size() == 0)
+		if (line.empty())
 			continue;
 
-		if (line.rfind("format ", 0) == 0)
-		{
-			std::istringstream iss(line);
-			std::string tmp;
-			iss >> tmp >> format;
-		}
-		else if (line.rfind("element vertex", 0) == 0)
-		{
-			std::istringstream iss(line);
-			std::string tmp;
-			iss >> tmp >> tmp >> vertexCount;
-		}
-		else if (line.rfind("element face", 0) == 0)
-		{
-			std::istringstream iss(line);
-			std::string tmp;
-			iss >> tmp >> tmp >> faceCount;
-		}
-		else if (line.rfind("property list", 0) == 0 && line.find("vertex_indices") != std::string::npos)
-		{
-			std::istringstream iss(line);
-			std::string tmp;
-			iss >> tmp >> tmp >> vertexListCountType >> vertexIndexType >> tmp;
-		}
-		else if (line.rfind("property ", 0) == 0)
-		{
-			static std::string current_element = "";
-			{
-				std::istringstream iss(line);
-				std::string tmp, type, name;
-				iss >> tmp >> type >> name;
-			}
-		}
-
-		if (line.rfind("end_header", 0) == 0)
-			break;
-	}
-
-	file.clear();
-	file.seekg(0, std::ios::beg);
-
-	std::string current_element = "";
-	vertexProperties.clear();
-	format = "ascii";
-	vertexCount = 0;
-	faceCount = 0;
-	vertexIndexType = "int";
-	vertexListCountType = "uchar";
-
-	while (std::getline(file, line))
-	{
 		std::istringstream iss(line);
 		std::string token;
 		if (!(iss >> token))
@@ -152,14 +111,12 @@ void parser::load_ply(simd_vec3 &calculator,
 		}
 		else if (token == "element")
 		{
-			std::string elemName;
-			iss >> elemName;
-			current_element = elemName;
-			if (elemName == "vertex")
+			iss >> current_element;
+			if (current_element == "vertex")
 			{
 				iss >> vertexCount;
 			}
-			else if (elemName == "face")
+			else if (current_element == "face")
 			{
 				iss >> faceCount;
 			}
@@ -168,20 +125,22 @@ void parser::load_ply(simd_vec3 &calculator,
 		{
 			if (current_element == "vertex")
 			{
-				std::string next;
-				iss >> next;
-				if (next == "list")
+				std::string type, name;
+				iss >> type >> name;
+
+				if (type == "list")
 				{
-					std::string count_type, index_type, name;
-					iss >> count_type >> index_type >> name;
+					std::string index_type;
+					iss >> index_type >> name;
 					vertexProperties.emplace_back("list", name);
 				}
 				else
 				{
-					std::string name;
-					iss >> name;
-					vertexProperties.emplace_back(next, name);
+					vertexProperties.emplace_back(type, name);
 				}
+
+				if (name == "nx" || name == "ny" || name == "nz")
+					has_normals = true;
 			}
 			else if (current_element == "face")
 			{
@@ -189,12 +148,12 @@ void parser::load_ply(simd_vec3 &calculator,
 				iss >> next;
 				if (next == "list")
 				{
-					std::string count_type, index_type, name;
-					iss >> count_type >> index_type >> name;
+					std::string c_type, i_type, name;
+					iss >> c_type >> i_type >> name;
 					if (name == "vertex_indices" || name == "vertex_index")
 					{
-						vertexListCountType = count_type;
-						vertexIndexType = index_type;
+						vertexListCountType = c_type;
+						vertexIndexType = i_type;
 					}
 				}
 			}
@@ -207,21 +166,44 @@ void parser::load_ply(simd_vec3 &calculator,
 
 	size_t startIndex = vertices->size();
 
-	auto read_double_bin = [&](std::ifstream &f) -> double
+	std::vector<vec3> loaded_normals;
+	if (has_normals)
 	{
-		double v = 0.0;
-		f.read(reinterpret_cast<char *>(&v), sizeof(v));
-		return v;
-	};
+		loaded_normals.reserve(vertexCount);
+	}
 
 	bool is_ascii = (format.find("ascii") != std::string::npos);
-	bool is_binary_little = (format.find("binary_little_endian") != std::string::npos);
-	bool is_binary_big = (format.find("binary_big_endian") != std::string::npos);
 
 	for (size_t vi = 0; vi < vertexCount; ++vi)
 	{
 		float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+		float vnx = 0.0f, vny = 0.0f, vnz = 0.0f;
 		bool gotX = false, gotY = false, gotZ = false;
+
+		auto assign_prop = [&](const std::string &name, float val)
+		{
+			if (name == "x")
+			{
+				vx = val;
+				gotX = true;
+			}
+			else if (name == "y")
+			{
+				vy = val;
+				gotY = true;
+			}
+			else if (name == "z")
+			{
+				vz = val;
+				gotZ = true;
+			}
+			else if (name == "nx")
+				vnx = val;
+			else if (name == "ny")
+				vny = val;
+			else if (name == "nz")
+				vnz = val;
+		};
 
 		if (is_ascii)
 		{
@@ -234,203 +216,58 @@ void parser::load_ply(simd_vec3 &calculator,
 			std::istringstream viss(vline);
 			for (auto &prop : vertexProperties)
 			{
-				std::string ptype = prop.first;
-				std::string pname = prop.second;
-				std::string token;
-				if (!(viss >> token))
-				{
-					my_printf("Malformed vertex line %zu\n", vi);
-					exit(-1);
-				}
-				if (pname == "x")
-				{
-					vx = std::stof(token);
-					gotX = true;
-				}
-				else if (pname == "y")
-				{
-					vy = std::stof(token);
-					gotY = true;
-				}
-				else if (pname == "z")
-				{
-					vz = std::stof(token);
-					gotZ = true;
-				}
+				std::string token_val;
+				if (!(viss >> token_val))
+					break;
+				if (prop.first == "list")
+					continue;
+				assign_prop(prop.second, std::stof(token_val));
 			}
 		}
 		else
 		{
 			for (auto &prop : vertexProperties)
 			{
-				std::string ptype = prop.first;
-				std::string pname = prop.second;
+				std::string type = prop.first;
+				std::string name = prop.second;
 
-				std::string t = ptype;
-				std::transform(t.begin(), t.end(), t.begin(), ::tolower);
+				std::transform(type.begin(), type.end(), type.begin(), ::tolower);
 
-				if (t == "float" || t == "float32")
+				float val = 0.0f;
+				bool read_success = true;
+
+				if (type == "float" || type == "float32")
+					val = read_float(file);
+				else if (type == "double" || type == "float64")
+					val = static_cast<float>(read_double(file));
+				else if (type == "uchar" || type == "uint8")
+					val = static_cast<float>(read_uint8(file));
+				else if (type == "char" || type == "int8")
+					val = static_cast<float>(read_int8(file));
+				else if (type == "ushort" || type == "uint16")
+					val = static_cast<float>(read_uint16(file));
+				else if (type == "short" || type == "int16")
+					val = static_cast<float>(read_int16(file));
+				else if (type == "int" || type == "int32")
+					val = static_cast<float>(read_int32(file));
+				else if (type == "uint" || type == "uint32")
+					val = static_cast<float>(read_uint32(file));
+				else if (type == "list")
 				{
-					float v = read_float(file);
-					if (pname == "x")
-					{
-						vx = v;
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = v;
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = v;
-						gotZ = true;
-					}
-				}
-				else if (t == "double" || t == "float64")
-				{
-					double d = read_double_bin(file);
-					if (pname == "x")
-					{
-						vx = static_cast<float>(d);
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = static_cast<float>(d);
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = static_cast<float>(d);
-						gotZ = true;
-					}
-				}
-				else if (t == "uchar" || t == "uint8")
-				{
-					uint8_t u = read_uint8(file);
-					if (pname == "x")
-					{
-						vx = static_cast<float>(u);
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = static_cast<float>(u);
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = static_cast<float>(u);
-						gotZ = true;
-					}
-				}
-				else if (t == "char" || t == "int8")
-				{
-					int8_t s = read_int8(file);
-					if (pname == "x")
-					{
-						vx = static_cast<float>(s);
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = static_cast<float>(s);
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = static_cast<float>(s);
-						gotZ = true;
-					}
-				}
-				else if (t == "ushort" || t == "uint16")
-				{
-					uint16_t u = read_uint16(file);
-					if (pname == "x")
-					{
-						vx = static_cast<float>(u);
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = static_cast<float>(u);
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = static_cast<float>(u);
-						gotZ = true;
-					}
-				}
-				else if (t == "short" || t == "int16")
-				{
-					int16_t s = read_int16(file);
-					if (pname == "x")
-					{
-						vx = static_cast<float>(s);
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = static_cast<float>(s);
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = static_cast<float>(s);
-						gotZ = true;
-					}
-				}
-				else if (t == "int" || t == "int32")
-				{
-					int32_t s = read_int32(file);
-					if (pname == "x")
-					{
-						vx = static_cast<float>(s);
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = static_cast<float>(s);
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = static_cast<float>(s);
-						gotZ = true;
-					}
-				}
-				else if (t == "uint" || t == "uint32")
-				{
-					uint32_t u = read_uint32(file);
-					if (pname == "x")
-					{
-						vx = static_cast<float>(u);
-						gotX = true;
-					}
-					else if (pname == "y")
-					{
-						vy = static_cast<float>(u);
-						gotY = true;
-					}
-					else if (pname == "z")
-					{
-						vz = static_cast<float>(u);
-						gotZ = true;
-					}
-				}
-				else if (t == "list")
-				{
-					uint32_t count = read_uint8(file);
-					for (uint32_t k = 0; k < count; ++k)
-						(void)read_uint8(file);
+					uint8_t count = read_uint8(file);
+					for (int k = 0; k < count; ++k)
+						read_uint8(file);
+					read_success = false;
 				}
 				else
 				{
-					my_printf("Warning: unsupported vertex property type '%s' — skipping. You may need to extend parser.\n", ptype.c_str());
 					file.seekg(4, std::ios::cur);
+					read_success = false;
+				}
+
+				if (read_success)
+				{
+					assign_prop(name, val);
 				}
 			}
 		}
@@ -443,48 +280,50 @@ void parser::load_ply(simd_vec3 &calculator,
 		}
 
 		vertices->emplace_back(vx, vy, vz);
+		if (has_normals)
+		{
+			loaded_normals.emplace_back(vnx, vny, vnz);
+		}
 	}
 
 	auto read_index_value = [&](std::ifstream &f) -> int32_t
 	{
-		if (vertexIndexType == "uint" || vertexIndexType == "uint32" || vertexIndexType == "uint32_t")
-			return static_cast<int32_t>(read_uint32(f));
-		else if (vertexIndexType == "int" || vertexIndexType == "int32" || vertexIndexType == "int32_t")
+		std::string t = vertexIndexType;
+		if (t == "int" || t == "int32" || t == "int32_t")
 			return read_int32(f);
-		else if (vertexIndexType == "ushort" || vertexIndexType == "uint16")
+		if (t == "uint" || t == "uint32" || t == "uint32_t")
+			return static_cast<int32_t>(read_uint32(f));
+		if (t == "ushort" || t == "uint16")
 			return static_cast<int32_t>(read_uint16(f));
-		else if (vertexIndexType == "short" || vertexIndexType == "int16")
+		if (t == "short" || t == "int16")
 			return read_int16(f);
-		else if (vertexIndexType == "uchar" || vertexIndexType == "uint8")
+		if (t == "uchar" || t == "uint8")
 			return static_cast<int32_t>(read_uint8(f));
-		else if (vertexIndexType == "char" || vertexIndexType == "int8")
+		if (t == "char" || t == "int8")
 			return read_int8(f);
-		else
-		{
-			my_printf("Unsupported vertex index type '%s' in PLY file.\n", vertexIndexType.c_str());
-			exit(-1);
-		}
+		my_printf("Unsupported vertex index type '%s'\n", vertexIndexType.c_str());
+		exit(-1);
 	};
 
 	auto read_list_count = [&](std::ifstream &f) -> uint32_t
 	{
-		if (vertexListCountType == "uchar" || vertexListCountType == "uint8")
+		std::string t = vertexListCountType;
+		if (t == "uchar" || t == "uint8")
 			return read_uint8(f);
-		else if (vertexListCountType == "ushort" || vertexListCountType == "uint16")
+		if (t == "ushort" || t == "uint16")
 			return read_uint16(f);
-		else if (vertexListCountType == "uint" || vertexListCountType == "uint32")
+		if (t == "uint" || t == "uint32")
 			return read_uint32(f);
-		else
-		{
-			my_printf("Unsupported list count type '%s' in PLY file.\n", vertexListCountType.c_str());
-			exit(-1);
-		}
+		my_printf("Unsupported list count type '%s'\n", vertexListCountType.c_str());
+		exit(-1);
 	};
 
 	int triCount = 0;
 	for (size_t fi = 0; fi < faceCount; ++fi)
 	{
 		uint32_t n = 0;
+		std::vector<int32_t> face_indices;
+
 		if (is_ascii)
 		{
 			std::string fline;
@@ -495,64 +334,67 @@ void parser::load_ply(simd_vec3 &calculator,
 			}
 			std::istringstream fiss(fline);
 			fiss >> n;
-			if (n == 3)
+			face_indices.reserve(n);
+			int32_t idx;
+			for (uint32_t j = 0; j < n; ++j)
 			{
-				int32_t a, b, c;
-				fiss >> a >> b >> c;
-				if (a < 0 || b < 0 || c < 0 || a >= (int)vertexCount || b >= (int)vertexCount || c >= (int)vertexCount)
-				{
-					my_printf("Warning: skipping invalid face %zu (indices: %d, %d, %d)\n", (int)fi, a, b, c);
-					continue;
-				}
-				shapes->push_back(new triangle(
-					calculator,
-					&vertices->at(a + startIndex),
-					&vertices->at(b + startIndex),
-					&vertices->at(c + startIndex),
-					mat, ami));
-				triCount++;
-			}
-			else
-			{
-				for (uint32_t j = 0; j < n; ++j)
-				{
-					int32_t idx;
-					fiss >> idx;
-				}
+				fiss >> idx;
+				face_indices.push_back(idx);
 			}
 		}
 		else
 		{
 			n = read_list_count(file);
-			if (n == 3)
+			face_indices.reserve(n);
+			for (uint32_t j = 0; j < n; ++j)
 			{
-				int32_t a = read_index_value(file);
-				int32_t b = read_index_value(file);
-				int32_t c = read_index_value(file);
+				face_indices.push_back(read_index_value(file));
+			}
+		}
 
-				if (a < 0 || b < 0 || c < 0 ||
-					a >= (int)vertexCount || b >= (int)vertexCount || c >= (int)vertexCount)
-				{
-					my_printf("Warning: skipping invalid face %zu (indices: %d, %d, %d)\n",
-							  (int)fi, a, b, c);
-					continue;
-				}
+		if (n < 3)
+		{
+			continue;
+		}
 
+		int32_t idx0 = face_indices[0];
+
+		for (size_t i = 1; i < n - 1; ++i)
+		{
+			int32_t idx1 = face_indices[i];
+			int32_t idx2 = face_indices[i + 1];
+
+			if (idx0 < 0 || idx1 < 0 || idx2 < 0 ||
+				idx0 >= (int)vertexCount || idx1 >= (int)vertexCount || idx2 >= (int)vertexCount)
+			{
+				continue;
+			}
+
+			if (has_normals)
+			{
 				shapes->push_back(new triangle(
 					calculator,
-					&vertices->at(a + startIndex),
-					&vertices->at(b + startIndex),
-					&vertices->at(c + startIndex),
+					&vertices->at(idx0 + startIndex),
+					&vertices->at(idx1 + startIndex),
+					&vertices->at(idx2 + startIndex),
+					loaded_normals[idx0],
+					loaded_normals[idx1],
+					loaded_normals[idx2],
 					mat, ami));
-				triCount++;
 			}
 			else
 			{
-				for (uint32_t j = 0; j < n; ++j)
-					(void)read_index_value(file);
+				shapes->push_back(new triangle(
+					calculator,
+					&vertices->at(idx0 + startIndex),
+					&vertices->at(idx1 + startIndex),
+					&vertices->at(idx2 + startIndex),
+					mat, ami));
 			}
+			triCount++;
 		}
 	}
 
-	my_printf("Loaded PLY: %zu vertices (%d tris), startIndex=%zu\n", vertexCount, triCount, startIndex);
+	my_printf("Loaded PLY: %zu vertices, %d tris. Smooth Shading: %s\n",
+			  vertexCount, triCount, has_normals ? "ON" : "OFF");
 }
