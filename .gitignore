@@ -1,0 +1,8 @@
+raytracer
+.vscode
+raytracer.exe
+*.png
+*.txt
+outputs/
+linux_ffmpeg/
+win_ffmpeg/
