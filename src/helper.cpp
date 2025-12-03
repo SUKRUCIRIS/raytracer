@@ -1,6 +1,6 @@
 #include "helper.h"
 
-static FILE *file = fopen("output.txt", "w");
+static FILE *file = fopen("output.txt", "a");
 
 void my_printf(const char *fmt, ...)
 {

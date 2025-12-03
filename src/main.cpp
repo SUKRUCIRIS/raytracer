@@ -106,10 +106,10 @@ void createVideosFromPngSequences(const std::string &folderPath)
 		std::string cmd =
 #ifdef _WIN32
 			ffmpegPath + " -y -framerate 30 -i \"" + inputPattern +
-			"\" -pix_fmt yuv420p \"" + outputFile + "\"";
+			"\" -c:v mpeg4 -q:v 1 -pix_fmt yuv420p \"" + outputFile + "\"";
 #else
 			ffmpegPath + " -y -framerate 30 -i \"" + inputPattern +
-			"\" -pix_fmt yuv420p \"" + outputFile + "\"";
+			"\" -c:v mpeg4 -q:v 1 -pix_fmt yuv420p \"" + outputFile + "\"";
 #endif
 
 		std::cout << "Running: " << cmd << "\n";
@@ -121,26 +121,31 @@ void createVideosFromPngSequences(const std::string &folderPath)
 		else
 		{
 			std::cout << "Successfully created: " << outputFile << "\n";
-			std::cout << "Erasing " << frames.size() << " source PNG files for sequence '" << prefix << "'...\n";
-			for (const auto &frame : frames)
+
+			fs::path usedDir = fs::path(folderPath) / "used";
+
+			try
 			{
-				try
+				if (!fs::exists(usedDir))
 				{
-					if (fs::remove(frame.second))
-					{
-						// std::cout << "Deleted: " << frame.second.filename().string() << "\n";
-					}
-					else
-					{
-						std::cerr << "Warning: Could not delete file: " << frame.second.string() << "\n";
-					}
+					fs::create_directory(usedDir);
 				}
-				catch (const fs::filesystem_error &e)
+
+				std::cout << "Moving " << frames.size() << " source PNG files to '" << usedDir.string() << "'...\n";
+
+				for (const auto &frame : frames)
 				{
-					std::cerr << "Filesystem Error during deletion of " << frame.second.filename().string() << ": " << e.what() << "\n";
+					fs::path sourcePath = frame.second;
+					fs::path destPath = usedDir / sourcePath.filename();
+
+					fs::rename(sourcePath, destPath);
 				}
+				std::cout << "Move complete.\n";
 			}
-			std::cout << "Cleanup complete.\n";
+			catch (const fs::filesystem_error &e)
+			{
+				std::cerr << "Filesystem Error during file cleanup: " << e.what() << "\n";
+			}
 		}
 	}
 }
@@ -295,6 +300,8 @@ void process_file(const char *filename, int thread_count)
 
 int main(int argc, char **argv)
 {
+	my_printf("\n>>> NEW RUN <<<\n");
+
 	std::filesystem::create_directories("outputs");
 	int thread_count = 1;
 	if (argc == 2)
