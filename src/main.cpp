@@ -104,13 +104,10 @@ void createVideosFromPngSequences(const std::string &folderPath)
 		std::string outputFile = (fs::path(folderPath) / (prefix + ".mp4")).string();
 
 		std::string cmd =
-#ifdef _WIN32
 			ffmpegPath + " -y -framerate 30 -i \"" + inputPattern +
-			"\" -c:v mpeg4 -q:v 1 -pix_fmt yuv420p \"" + outputFile + "\"";
-#else
-			ffmpegPath + " -y -framerate 30 -i \"" + inputPattern +
-			"\" -c:v mpeg4 -q:v 1 -pix_fmt yuv420p \"" + outputFile + "\"";
-#endif
+			"\" -c:v libopenh264 -b:v 8M -maxrate 8M -bufsize 16M -preset slow "
+			"-profile:v high -pix_fmt yuv420p \"" +
+			outputFile + "\"";
 
 		std::cout << "Running: " << cmd << "\n";
 		int result = system(cmd.c_str());
