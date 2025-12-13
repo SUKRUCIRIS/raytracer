@@ -86,6 +86,136 @@ void processTrans(const rapidjson::Value &obj, simd_mat4 &calculator_m, transfor
 	}
 };
 
+std::vector<image *> *parser::get_images()
+{
+	auto *images = new std::vector<image *>;
+
+	if (!d.HasMember("Scene") || !d["Scene"].HasMember("Textures"))
+		return images;
+
+	const auto &texturesNode = d["Scene"]["Textures"];
+	if (!texturesNode.HasMember("Images") || !texturesNode["Images"].HasMember("Image"))
+		return images;
+
+	const auto &imageNode = texturesNode["Images"]["Image"];
+
+	auto processImage = [&](const rapidjson::Value &img)
+	{
+		if (!img.HasMember("_id") || !img.HasMember("_data"))
+			return;
+
+		int id = std::stoi(img["_id"].GetString());
+		std::string relativePath = img["_data"].GetString();
+
+		std::filesystem::path baseDir = std::filesystem::path(this->file_name).parent_path();
+		std::filesystem::path fullPath = baseDir / relativePath;
+
+		images->push_back(new image(fullPath.string().c_str(), id));
+	};
+
+	if (imageNode.IsArray())
+	{
+		for (const auto &img : imageNode.GetArray())
+		{
+			processImage(img);
+		}
+	}
+	else if (imageNode.IsObject())
+	{
+		processImage(imageNode);
+	}
+
+	return images;
+}
+
+std::vector<texture *> *parser::get_textures(std::vector<image *> *images)
+{
+	auto *textures = new std::vector<texture *>;
+
+	if (!d.HasMember("Scene") || !d["Scene"].HasMember("Textures"))
+		return textures;
+
+	const auto &texturesNode = d["Scene"]["Textures"];
+	if (!texturesNode.HasMember("TextureMap"))
+		return textures;
+
+	const auto &texNode = texturesNode["TextureMap"];
+
+	auto processTexture = [&](const rapidjson::Value &tex)
+	{
+		if (!tex.HasMember("_id") || !tex.HasMember("ImageId"))
+			return;
+
+		int id = std::stoi(tex["_id"].GetString());
+		int imageId = std::stoi(tex["ImageId"].GetString());
+
+		image *linkedImage = nullptr;
+		if (images)
+		{
+			for (auto *img : *images)
+			{
+				if (img->id == imageId)
+				{
+					linkedImage = img;
+					break;
+				}
+			}
+		}
+
+		if (!linkedImage)
+		{
+			my_printf("Warning: Texture %d refers to missing ImageId %d\n", id, imageId);
+			return;
+		}
+
+		DecalMode mode = replace_kd;
+		if (tex.HasMember("DecalMode"))
+		{
+			std::string modeStr = tex["DecalMode"].GetString();
+			if (modeStr == "replace_kd")
+				mode = replace_kd;
+			else if (modeStr == "blend_kd")
+				mode = blend_kd;
+			else if (modeStr == "replace_ks")
+				mode = replace_ks;
+			else if (modeStr == "replace_background")
+				mode = replace_background;
+			else if (modeStr == "replace_normal")
+				mode = replace_normal;
+			else if (modeStr == "bump_normal")
+				mode = bump_normal;
+			else if (modeStr == "replace_all")
+				mode = replace_all;
+		}
+
+		Interpolation interp = bilinear;
+		if (tex.HasMember("Interpolation"))
+		{
+			std::string interpStr = tex["Interpolation"].GetString();
+			if (interpStr == "nearest")
+				interp = nearest;
+			else if (interpStr == "bilinear")
+				interp = bilinear;
+		}
+
+		textures->push_back(new texture(linkedImage, id, mode, interp));
+	};
+
+	if (texNode.IsArray())
+	{
+		for (const auto &tex : texNode.GetArray())
+		{
+			processTexture(tex);
+		}
+	}
+	else if (texNode.IsObject())
+	{
+		processTexture(texNode);
+	}
+
+	return textures;
+}
+
 std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t)
 {
 	std::vector<camera> *res = new std::vector<camera>;
