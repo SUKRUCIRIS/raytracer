@@ -3,6 +3,7 @@
 #include <vector>
 #include "shapes.h"
 #include "bvh.h"
+#include "lights.h"
 
 class ray_tracer
 {
