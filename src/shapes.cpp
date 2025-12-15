@@ -5,6 +5,8 @@ shape::shape(material *mat, shape_type t) : mat(mat), t(t) {};
 
 material *shape::getMaterial(int id) const { return mat; };
 
+std::vector<texture *> *shape::getTextures(int id) { return &textures; }
+
 shape_type shape::get_shapetype() const { return t; };
 
 void shape::getBoundingBox(int id, simd_vec3 &calculator, simd_mat4 &calculator_m, aabb &box) const { box = this->box; };
@@ -14,8 +16,8 @@ std::vector<int> shape::get_ids() const
 	return {123456};
 };
 
-triangle::triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat, all_mesh_infos *m)
-	: c1(*c1), c2(*c2), c3(*c3), shape(mat, shape_type::Triangle), smooth(false), m(m)
+triangle::triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, vec3 u, vec3 v, material *mat, all_mesh_infos *m)
+	: c1(*c1), c2(*c2), c3(*c3), shape(mat, shape_type::Triangle), smooth(false), m(m), u(u), v(v)
 {
 	calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 	calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -45,11 +47,11 @@ triangle::triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material
 	box.max.store();
 };
 
-triangle::triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3,
+triangle::triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, vec3 u, vec3 v,
 				   const vec3 &n1, const vec3 &n2, const vec3 &n3,
 				   material *mat, all_mesh_infos *m)
 	: c1(*c1), c2(*c2), c3(*c3), n1(n1), n2(n2), n3(n3),
-	  shape(mat, shape_type::Triangle), smooth(true), m(m)
+	  shape(mat, shape_type::Triangle), smooth(true), m(m), u(u), v(v)
 {
 	calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 	calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -76,6 +78,45 @@ material *triangle::getMaterial(int id) const
 {
 	return m->mesh_infos[id].mat;
 };
+
+std::vector<texture *> *triangle::getTextures(int id)
+{
+	return &m->mesh_infos[id].textures;
+}
+
+void triangle::calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
+{
+	vec3 edge1, edge2, vp;
+	calculator.subs(c2, c1, edge1);
+	calculator.subs(c3, c1, edge2);
+	calculator.subs(hit_point, c1, vp);
+
+	float d00, d01, d11, d20, d21;
+	calculator.dot(edge1, edge1, d00);
+	calculator.dot(edge1, edge2, d01);
+	calculator.dot(edge2, edge2, d11);
+	calculator.dot(vp, edge1, d20);
+	calculator.dot(vp, edge2, d21);
+
+	float denom = d00 * d11 - d01 * d01;
+
+	if (denom == 0.0f)
+	{
+		u = 0.0f;
+		v = 0.0f;
+		return;
+	}
+
+	float invDenom = 1.0f / denom;
+
+	float beta = (d11 * d20 - d01 * d21) * invDenom;
+	float gamma = (d00 * d21 - d01 * d20) * invDenom;
+	float alpha = 1.0f - beta - gamma;
+
+	u = alpha * this->u.get_x() + beta * this->u.get_y() + gamma * this->u.get_z();
+
+	v = alpha * this->v.get_x() + beta * this->v.get_y() + gamma * this->v.get_z();
+}
 
 void triangle::getBoundingBox(int id, simd_vec3 &calculator, simd_mat4 &calculator_m, aabb &box) const
 {

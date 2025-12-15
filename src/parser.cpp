@@ -386,12 +386,37 @@ std::vector<vec3> *parser::get_vertices()
 {
 	std::vector<vec3> *res = new std::vector<vec3>;
 
+	if (!d["Scene"].HasMember("VertexData"))
+	{
+		return res;
+	}
+
 	std::istringstream iss(d["Scene"]["VertexData"]["_data"].GetString());
 	float x, y, z;
 
 	while (iss >> x >> y >> z)
 	{
 		res->emplace_back(x, y, z);
+	}
+
+	return res;
+}
+
+std::vector<float> *parser::get_uvs()
+{
+	std::vector<float> *res = new std::vector<float>;
+
+	if (!d["Scene"].HasMember("TexCoordData"))
+	{
+		return res;
+	}
+
+	std::istringstream iss(d["Scene"]["TexCoordData"]["_data"].GetString());
+	float x;
+
+	while (iss >> x)
+	{
+		res->push_back(x);
 	}
 
 	return res;
@@ -505,7 +530,7 @@ std::vector<material> *parser::get_materials()
 }
 
 std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calculator_m, std::vector<vec3> *vertices, std::vector<material> *materials,
-										 transformations *t, std::vector<all_mesh_infos *> *m)
+										 transformations *t, std::vector<texture *> *textures, std::vector<float> *uvs, std::vector<all_mesh_infos *> *m)
 {
 	auto *shapes = new std::vector<shape *>;
 
@@ -541,6 +566,23 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		m_info.model = model;
 		calculator_m.inverse(model, m_info.inv_model);
 		calculator_m.transpose(m_info.inv_model, m_info.normal);
+
+		if (mesh.HasMember("Textures"))
+		{
+			std::istringstream iss(mesh["Textures"].GetString());
+			int x;
+
+			while (iss >> x)
+			{
+				for (auto &&i : *textures)
+				{
+					if (i->id == x)
+					{
+						m_info.textures.push_back(i);
+					}
+				}
+			}
+		}
 
 		if (mesh.HasMember("MotionBlur"))
 		{
@@ -602,6 +644,8 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 						&vertices->at(tri[0]),
 						&vertices->at(tri[1]),
 						&vertices->at(tri[2]),
+						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2), uvs->at(tri[1] * 2), uvs->at(tri[2] * 2)),
+						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2 + 1), uvs->at(tri[1] * 2 + 1), uvs->at(tri[2] * 2 + 1)),
 						vertex_normals[tri[0]],
 						vertex_normals[tri[1]],
 						vertex_normals[tri[2]],
@@ -617,6 +661,8 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 						&vertices->at(tri[0]),
 						&vertices->at(tri[1]),
 						&vertices->at(tri[2]),
+						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2), uvs->at(tri[1] * 2), uvs->at(tri[2] * 2)),
+						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2 + 1), uvs->at(tri[1] * 2 + 1), uvs->at(tri[2] * 2 + 1)),
 						&mat, ami));
 				}
 			}
@@ -663,6 +709,23 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		m_info.model = model;
 		calculator_m.inverse(model, m_info.inv_model);
 		calculator_m.transpose(m_info.inv_model, m_info.normal);
+
+		if (MeshInstance.HasMember("Textures"))
+		{
+			std::istringstream iss(MeshInstance["Textures"].GetString());
+			int x;
+
+			while (iss >> x)
+			{
+				for (auto &&i : *textures)
+				{
+					if (i->id == x)
+					{
+						m_info.textures.push_back(i);
+					}
+				}
+			}
+		}
 
 		if (MeshInstance.HasMember("MotionBlur"))
 		{
@@ -712,6 +775,8 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 				&vertices->at(static_cast<size_t>(i0 - 1)),
 				&vertices->at(static_cast<size_t>(i1 - 1)),
 				&vertices->at(static_cast<size_t>(i2 - 1)),
+				uvs->size() == 0 ? vec3() : vec3(uvs->at((i0 - 1) * 2), uvs->at((i1 - 1) * 2), uvs->at((i2 - 1) * 2)),
+				uvs->size() == 0 ? vec3() : vec3(uvs->at((i0 - 1) * 2 + 1), uvs->at((i1 - 1) * 2 + 1), uvs->at((i2 - 1) * 2 + 1)),
 				&mat,
 				ami));
 		}

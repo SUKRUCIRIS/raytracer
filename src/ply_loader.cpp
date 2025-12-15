@@ -411,6 +411,8 @@ void parser::load_ply(simd_vec3 &calculator,
 				&vertices->at(startIndex + tri[0]),
 				&vertices->at(startIndex + tri[1]),
 				&vertices->at(startIndex + tri[2]),
+				vec3(),
+				vec3(),
 				loaded_normals[tri[0]],
 				loaded_normals[tri[1]],
 				loaded_normals[tri[2]],
@@ -423,6 +425,8 @@ void parser::load_ply(simd_vec3 &calculator,
 				&vertices->at(startIndex + tri[0]),
 				&vertices->at(startIndex + tri[1]),
 				&vertices->at(startIndex + tri[2]),
+				vec3(),
+				vec3(),
 				mat, ami));
 		}
 	}

@@ -166,9 +166,15 @@ void process_file(const char *filename, int thread_count)
 
 	auto materials = p.get_materials();
 
+	auto images = p.get_images();
+
+	auto textures = p.get_textures(images);
+
+	auto uvs = p.get_uvs();
+
 	std::vector<all_mesh_infos *> m;
 
-	auto shapes = p.get_shapes(calculator, mat_calc, vertices, materials, transformations, &m);
+	auto shapes = p.get_shapes(calculator, mat_calc, vertices, materials, transformations, textures, uvs, &m);
 
 	my_printf("Vertex count: %d\n", vertices->size());
 	my_printf("Shape count: %d\n", shapes->size());
@@ -281,6 +287,25 @@ void process_file(const char *filename, int thread_count)
 
 		delete[] output;
 		delete[] ths;
+	}
+
+	delete uvs;
+
+	for (auto &&i : *images)
+	{
+		delete i;
+	}
+	delete images;
+
+	for (auto &&i : *textures)
+	{
+		delete i;
+	}
+	delete textures;
+
+	for (auto &&i : m)
+	{
+		delete i;
 	}
 
 	delete rt;

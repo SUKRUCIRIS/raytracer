@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 #include <cmath>
+#include "texture.h"
 
 #ifndef GEOMETRY_SCALE_FACTOR
 #define GEOMETRY_SCALE_FACTOR 1000.0f
@@ -60,6 +61,7 @@ struct mesh_info
 	mat4 normal;
 	material *mat;
 	vec3 motionblur;
+	std::vector<texture *> textures;
 };
 
 struct all_mesh_infos
@@ -71,6 +73,7 @@ class shape
 {
 protected:
 	material *mat;
+	std::vector<texture *> textures;
 	shape_type t;
 	aabb box;
 	shape() = delete;
@@ -78,6 +81,12 @@ protected:
 
 public:
 	virtual material *getMaterial(int id) const;
+	virtual std::vector<texture *> *getTextures(int id);
+	virtual void calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
+	{
+		u = 0;
+		v = 0;
+	};
 	shape_type get_shapetype() const;
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
 						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const = 0;
@@ -96,15 +105,20 @@ private:
 	bool smooth = false;
 	vec3 n1, n2, n3;
 	all_mesh_infos *m = 0;
+	vec3 u, v;
 
 public:
 	triangle() = delete;
-	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, material *mat, all_mesh_infos *m);
-	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3,
+	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, vec3 u, vec3 v, material *mat, all_mesh_infos *m);
+	triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, vec3 u, vec3 v,
 			 const vec3 &n1, const vec3 &n2, const vec3 &n3,
 			 material *mat, all_mesh_infos *m);
 
 	virtual material *getMaterial(int id) const override;
+
+	virtual std::vector<texture *> *getTextures(int id) override;
+
+	virtual void calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const override;
 
 	virtual void getBoundingBox(int id, simd_vec3 &calculator, simd_mat4 &calculator_m, aabb &box) const override;
 

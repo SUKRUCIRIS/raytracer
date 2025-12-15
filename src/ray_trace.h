@@ -21,8 +21,8 @@ private:
 				   vec3 &color, const float &raytime, const bool culling, int depth) const;
 
 	void calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
-						 const vec3 &hit_point, const vec3 &ray_origin, const shape *min_shape, const float &raytime,
-						 vec3 &color) const;
+						 const std::vector<texture *> *textures, const vec3 &hit_point, const vec3 &ray_origin,
+						 const shape *min_shape, const float &raytime, vec3 &color) const;
 
 	static void calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I, vec3 &R, float roughness);
 
