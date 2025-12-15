@@ -64,6 +64,20 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 				i->im->sample_bilinear(u, v, replaceks_color);
 			}
 		}
+		else if (i->dmode == replace_all)
+		{
+			float u, v;
+			min_shape->calculate_uv(calculator, hit_point, u, v);
+			if (i->interp == nearest)
+			{
+				i->im->sample_nearest(u, v, color);
+			}
+			else
+			{
+				i->im->sample_bilinear(u, v, color);
+			}
+			return;
+		}
 	}
 
 	for (Light *light : *lights)
@@ -259,6 +273,59 @@ bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, c
 	return true;
 }
 
+void ray_tracer::apply_normal_map(simd_vec3 &calculator, const vec3 &hit_point, const std::vector<texture *> *textures,
+								  const shape *min_shape, vec3 &normal) const
+{
+	for (const auto *tex : *textures)
+	{
+		if (tex->dmode == replace_normal)
+		{
+			float u, v;
+			min_shape->calculate_uv(calculator, hit_point, u, v);
+
+			vec3 raw_normal_color(0.5f, 0.5f, 1.0f);
+			if (tex->interp == nearest)
+			{
+				tex->im->sample_nearest(u, v, raw_normal_color);
+			}
+			else
+			{
+				tex->im->sample_bilinear(u, v, raw_normal_color);
+			}
+
+			vec3 tangent_space_normal;
+			calculator.mult_scalar(raw_normal_color, 2.0f, tangent_space_normal);
+			vec3 ones(1.0f, 1.0f, 1.0f);
+			calculator.subs(tangent_space_normal, ones, tangent_space_normal);
+
+			vec3 T, B;
+			min_shape->get_tangent(calculator, hit_point, T);
+
+			float ndott;
+			calculator.dot(normal, T, ndott);
+			vec3 temp_vec;
+			calculator.mult_scalar(normal, ndott, temp_vec);
+			calculator.subs(T, temp_vec, T);
+			calculator.normalize(T, T);
+
+			calculator.cross(normal, T, B);
+
+			vec3 term1, term2, term3;
+			tangent_space_normal.store();
+			calculator.mult_scalar(T, tangent_space_normal.get_x(), term1);
+			calculator.mult_scalar(B, tangent_space_normal.get_y(), term2);
+			calculator.mult_scalar(normal, tangent_space_normal.get_z(), term3);
+
+			vec3 new_normal;
+			calculator.add(term1, term2, new_normal);
+			calculator.add(new_normal, term3, new_normal);
+			calculator.normalize(new_normal, normal);
+
+			return;
+		}
+	}
+}
+
 void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
 						   vec3 &color, const float &raytime, const bool culling, int depth) const
 {
@@ -290,6 +357,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	calculator.add(ray_origin, hit_point, hit_point);
 	vec3 normal;
 	min_shape->get_normal(calculator, calculator_m, hit_point, min_id, normal);
+	apply_normal_map(calculator, hit_point, textures, min_shape, normal);
 	if (mat->mt == Mirror)
 	{
 		vec3 R;

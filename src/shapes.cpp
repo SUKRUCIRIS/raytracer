@@ -275,6 +275,39 @@ bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const v
 	return t > EPSILON;
 }
 
+void triangle::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const
+{
+	vec3 edge1, edge2;
+	calculator.subs(c2, c1, edge1);
+	calculator.subs(c3, c1, edge2);
+
+	float du1 = this->u.get_y() - this->u.get_x();
+	float dv1 = this->v.get_y() - this->v.get_x();
+	float du2 = this->u.get_z() - this->u.get_x();
+	float dv2 = this->v.get_z() - this->v.get_x();
+
+	float det = (du1 * dv2 - du2 * dv1);
+
+	if (fabsf(det) < 1e-8f)
+	{
+		calculator.normalize(edge1, tangent);
+		tangent.store();
+		return;
+	}
+
+	float f = 1.0f / det;
+
+	vec3 term1, term2;
+	calculator.mult_scalar(edge1, dv2, term1);
+	calculator.mult_scalar(edge2, dv1, term2);
+
+	calculator.subs(term1, term2, tangent);
+	calculator.mult_scalar(tangent, f, tangent);
+
+	calculator.normalize(tangent, tangent);
+	tangent.store();
+}
+
 sphere::sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, mat4 model,
 			   mat4 inv_model, mat4 normal_m)
 	: center(*center), radius(radius), shape(mat, shape_type::Sphere), model(model), inv_model(inv_model), normal_m(normal_m)
@@ -380,6 +413,46 @@ bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec
 	return true;
 }
 
+void sphere::calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
+{
+	vec3 local_point;
+	hit_point.store();
+
+	vec3 p;
+	calculator.subs(hit_point, center, p);
+	calculator.normalize(p, p);
+
+	float phi = atan2f(p.get_z(), p.get_x());
+	float theta = asinf(p.get_y());
+
+	const float PI = 3.14159265359f;
+
+	u = 1.0f - (phi + PI) / (2.0f * PI);
+	v = (theta + PI / 2.0f) / PI;
+}
+
+void sphere::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const
+{
+	vec3 n;
+	calculator.subs(hit_point, center, n);
+	calculator.normalize(n, n);
+
+	vec3 up(0.0f, 1.0f, 0.0f);
+
+	float dot_val;
+	calculator.dot(n, up, dot_val);
+	if (fabs(dot_val) > 0.999f)
+	{
+		tangent = vec3(1.0f, 0.0f, 0.0f);
+	}
+	else
+	{
+		calculator.cross(up, n, tangent);
+		calculator.normalize(tangent, tangent);
+	}
+	tangent.store();
+}
+
 plane::plane(vec3 *point, vec3 *normal, material *mat)
 	: point(*point), normal(*normal), shape(mat, shape_type::Plane)
 {
@@ -411,4 +484,39 @@ bool plane::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3
 		return false;
 
 	return true;
+}
+
+void plane::calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
+{
+	vec3 tangent, bitangent;
+	vec3 helper(1.0f, 0.0f, 0.0f);
+	if (fabs(normal.get_x()) > 0.9f)
+	{
+		helper = vec3(0.0f, 1.0f, 0.0f);
+	}
+
+	calculator.cross(normal, helper, tangent);
+	calculator.normalize(tangent, tangent);
+
+	calculator.cross(normal, tangent, bitangent);
+
+	vec3 vec_to_point;
+	calculator.subs(hit_point, point, vec_to_point);
+
+	calculator.dot(vec_to_point, tangent, u);
+	calculator.dot(vec_to_point, bitangent, v);
+}
+
+void plane::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const
+{
+	vec3 helper(1.0f, 0.0f, 0.0f);
+
+	if (fabs(normal.get_x()) > 0.9f)
+	{
+		helper = vec3(0.0f, 1.0f, 0.0f);
+	}
+
+	calculator.cross(normal, helper, tangent);
+	calculator.normalize(tangent, tangent);
+	tangent.store();
 }

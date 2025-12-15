@@ -82,11 +82,8 @@ protected:
 public:
 	virtual material *getMaterial(int id) const;
 	virtual std::vector<texture *> *getTextures(int id);
-	virtual void calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
-	{
-		u = 0;
-		v = 0;
-	};
+	virtual void calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const = 0;
+	virtual void get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const = 0;
 	shape_type get_shapetype() const;
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
 						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const = 0;
@@ -120,6 +117,8 @@ public:
 
 	virtual void calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const override;
 
+	virtual void get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const override;
+
 	virtual void getBoundingBox(int id, simd_vec3 &calculator, simd_mat4 &calculator_m, aabb &box) const override;
 
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal) const override;
@@ -150,6 +149,10 @@ public:
 						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const override;
 
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal) const override;
+
+	virtual void calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const override;
+
+	virtual void get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const override;
 };
 
 class plane : public shape
@@ -166,4 +169,8 @@ public:
 
 	virtual bool intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &rayOrigin, const vec3 &rayDir,
 						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const override;
+
+	virtual void calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const override;
+
+	virtual void get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const override;
 };

@@ -29,6 +29,9 @@ private:
 	static bool calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I,
 										float n1, float n2, vec3 &T, float roughness);
 
+	void apply_normal_map(simd_vec3 &calculator, const vec3 &hit_point, const std::vector<texture *> *textures,
+						  const shape *min_shape, vec3 &normal) const;
+
 public:
 	ray_tracer() = delete;
 	ray_tracer(const std::vector<shape *> *shapes,
