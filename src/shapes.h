@@ -77,7 +77,7 @@ protected:
 	shape_type t;
 	aabb box;
 	shape() = delete;
-	shape(material *mat, shape_type t);
+	shape(material *mat, shape_type t, std::vector<texture *> textures);
 
 public:
 	virtual material *getMaterial(int id) const;
@@ -140,7 +140,7 @@ private:
 
 public:
 	sphere() = delete;
-	sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, mat4 model,
+	sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, std::vector<texture *> textures, mat4 model,
 		   mat4 inv_model, mat4 normal_m);
 
 	vec3 get_center() const;
@@ -163,7 +163,7 @@ private:
 
 public:
 	plane() = delete;
-	plane(vec3 *point, vec3 *normal, material *mat);
+	plane(vec3 *point, vec3 *normal, material *mat, std::vector<texture *> textures);
 
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal) const override;
 

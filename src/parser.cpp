@@ -766,6 +766,23 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		calculator_m.inverse(model, m_info.inv_model);
 		calculator_m.transpose(m_info.inv_model, m_info.normal);
 
+		if (tri.HasMember("Textures"))
+		{
+			std::istringstream iss(tri["Textures"].GetString());
+			int x;
+
+			while (iss >> x)
+			{
+				for (auto &&i : *textures)
+				{
+					if (i->id == x)
+					{
+						m_info.textures.push_back(i);
+					}
+				}
+			}
+		}
+
 		ami->mesh_infos[mesh_id] = m_info;
 
 		if (iss >> i0 >> i1 >> i2)
@@ -802,11 +819,29 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 		calculator_m.transpose(inv, normal);
 
+		std::vector<texture *> texturesx;
+		if (sph.HasMember("Textures"))
+		{
+			std::istringstream iss(sph["Textures"].GetString());
+			int x;
+
+			while (iss >> x)
+			{
+				for (auto &&i : *textures)
+				{
+					if (i->id == x)
+					{
+						texturesx.push_back(i);
+					}
+				}
+			}
+		}
+
 		shapes->push_back(new sphere(
 			calculator, calculator_m,
 			&vertices->at(center_idx - 1),
 			radius,
-			&materials->at(std::stoi(sph["Material"].GetString()) - 1), model, inv, normal));
+			&materials->at(std::stoi(sph["Material"].GetString()) - 1), texturesx, model, inv, normal));
 	};
 
 	auto processPlane = [&](const rapidjson::Value &pl)
@@ -833,10 +868,29 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		calculator_m.transpose(norm_m, norm_m);
 		calculator_m.mult_vec(norm_m, normal_vec, normal_vec, true);
 		calculator.normalize(normal_vec, normal_vec);
+
+		std::vector<texture *> texturesx;
+		if (pl.HasMember("Textures"))
+		{
+			std::istringstream iss(pl["Textures"].GetString());
+			int x;
+
+			while (iss >> x)
+			{
+				for (auto &&i : *textures)
+				{
+					if (i->id == x)
+					{
+						texturesx.push_back(i);
+					}
+				}
+			}
+		}
+
 		shapes->push_back(new plane(
 			&transformedPoint,
 			&normal_vec,
-			&materials->at(std::stoi(pl["Material"].GetString()) - 1)));
+			&materials->at(std::stoi(pl["Material"].GetString()) - 1), texturesx));
 	};
 
 	size_t total_extra_vertices = 0;

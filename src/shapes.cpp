@@ -1,7 +1,7 @@
 #include "shapes.h"
 #include <math.h>
 
-shape::shape(material *mat, shape_type t) : mat(mat), t(t) {};
+shape::shape(material *mat, shape_type t, std::vector<texture *> textures) : mat(mat), t(t), textures(textures) {};
 
 material *shape::getMaterial(int id) const { return mat; };
 
@@ -17,7 +17,7 @@ std::vector<int> shape::get_ids() const
 };
 
 triangle::triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, vec3 u, vec3 v, material *mat, all_mesh_infos *m)
-	: c1(*c1), c2(*c2), c3(*c3), shape(mat, shape_type::Triangle), smooth(false), m(m), u(u), v(v)
+	: c1(*c1), c2(*c2), c3(*c3), shape(mat, shape_type::Triangle, std::vector<texture *>()), smooth(false), m(m), u(u), v(v)
 {
 	calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 	calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -51,7 +51,7 @@ triangle::triangle(simd_vec3 &calculator, vec3 *c1, vec3 *c2, vec3 *c3, vec3 u, 
 				   const vec3 &n1, const vec3 &n2, const vec3 &n3,
 				   material *mat, all_mesh_infos *m)
 	: c1(*c1), c2(*c2), c3(*c3), n1(n1), n2(n2), n3(n3),
-	  shape(mat, shape_type::Triangle), smooth(true), m(m), u(u), v(v)
+	  shape(mat, shape_type::Triangle, std::vector<texture *>()), smooth(true), m(m), u(u), v(v)
 {
 	calculator.mult_scalar(*c1, GEOMETRY_SCALE_FACTOR, c1_scaled);
 	calculator.mult_scalar(*c2, GEOMETRY_SCALE_FACTOR, c2_scaled);
@@ -308,9 +308,9 @@ void triangle::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &t
 	tangent.store();
 }
 
-sphere::sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, mat4 model,
+sphere::sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, std::vector<texture *> textures, mat4 model,
 			   mat4 inv_model, mat4 normal_m)
-	: center(*center), radius(radius), shape(mat, shape_type::Sphere), model(model), inv_model(inv_model), normal_m(normal_m)
+	: center(*center), radius(radius), shape(mat, shape_type::Sphere, textures), model(model), inv_model(inv_model), normal_m(normal_m)
 {
 	vec3 rvec(radius);
 	calculator.subs(*center, rvec, box.min);
@@ -453,8 +453,8 @@ void sphere::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tan
 	tangent.store();
 }
 
-plane::plane(vec3 *point, vec3 *normal, material *mat)
-	: point(*point), normal(*normal), shape(mat, shape_type::Plane)
+plane::plane(vec3 *point, vec3 *normal, material *mat, std::vector<texture *> textures)
+	: point(*point), normal(*normal), shape(mat, shape_type::Plane, textures)
 {
 	const float M = FLT_MAX;
 	box.min = vec3(-M, -M, -M);
