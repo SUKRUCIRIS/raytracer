@@ -160,25 +160,48 @@ void process_file(const char *filename, int thread_count)
 
 	auto transformations = p.get_transformations(mat_calc);
 
+	my_printf("transformations parsed\n");
+
 	auto cameras = p.get_camera(calculator, mat_calc, transformations);
+
+	my_printf("cameras parsed\n");
 
 	auto vertices = p.get_vertices();
 
+	my_printf("vertices parsed\n");
+
 	auto materials = p.get_materials();
+
+	my_printf("materials parsed\n");
 
 	auto images = p.get_images();
 
+	my_printf("images parsed\n");
+
 	auto textures = p.get_textures(images);
 
+	my_printf("textures parsed\n");
+
+	texture *bg = 0;
+
+	for (auto &&i : *textures)
+	{
+		if (i->dmode == replace_background)
+		{
+			bg = i;
+			break;
+		}
+	}
+
 	auto uvs = p.get_uvs();
+
+	my_printf("uvs parsed\n");
 
 	std::vector<all_mesh_infos *> m;
 
 	auto shapes = p.get_shapes(calculator, mat_calc, vertices, materials, transformations, textures, uvs, &m);
 
-	my_printf("Vertex count: %d\n", vertices->size());
-	my_printf("Shape count: %d\n", shapes->size());
-	my_printf("Camera count: %d\n", cameras->size());
+	my_printf("shapes parsed\n");
 
 	float intersectionepsilon = p.get_intersectionepsilon();
 
@@ -211,7 +234,7 @@ void process_file(const char *filename, int thread_count)
 
 		std::atomic<int> next_scanline(0);
 
-		auto ray_thread = [rt, &camera, output, total_pixels, &next_scanline](int t) mutable
+		auto ray_thread = [rt, &camera, output, total_pixels, &next_scanline, bg](int t) mutable
 		{
 			simd_vec3 calculatorp;
 			simd_mat4 calculator_m(calculatorp);
@@ -227,6 +250,7 @@ void process_file(const char *filename, int thread_count)
 				if (j >= camera.resy)
 					break;
 
+				float pixelv = 1.0f - ((float)j / (float)(camera.resy - 1));
 				for (int i = 0; i < camera.resx; ++i)
 				{
 					int index = j * camera.resx + i;
@@ -237,11 +261,13 @@ void process_file(const char *filename, int thread_count)
 					float g_acc = 0.0f;
 					float b_acc = 0.0f;
 
+					float pixelu = (float)i / (float)(camera.resx - 1);
+
 					for (const auto &sample : samples)
 					{
 						unsigned char temp_color[3];
 
-						rt->trace(calculatorp, calculator_m, sample.position, sample.direction, 0, sample.time, true, temp_color);
+						rt->trace(calculatorp, calculator_m, sample.position, sample.direction, 0, sample.time, true, bg, pixelu, pixelv, temp_color);
 
 						r_acc += temp_color[0];
 						g_acc += temp_color[1];

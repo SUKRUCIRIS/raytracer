@@ -6,7 +6,7 @@
 
 void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
 								 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
-								 const shape *min_shape, const float &raytime, vec3 &color) const
+								 const shape *min_shape, const float &raytime, int id, texture *bg, vec3 &color) const
 {
 	static thread_local shape *last_shadow_blocker = nullptr; // shadow cache optimization
 	static thread_local int last_blocker_id = -1;
@@ -24,7 +24,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		{
 			replacekd = true;
 			float u, v;
-			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, replacekd_color);
@@ -38,7 +38,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		{
 			blendkd = true;
 			float u, v;
-			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, replacekd_color);
@@ -54,7 +54,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		{
 			replaceks = true;
 			float u, v;
-			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, replaceks_color);
@@ -67,7 +67,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		else if (i->dmode == replace_all)
 		{
 			float u, v;
-			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, color);
@@ -274,14 +274,14 @@ bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, c
 }
 
 void ray_tracer::apply_normal_map(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, const std::vector<texture *> *textures,
-								  const shape *min_shape, vec3 &normal) const
+								  const shape *min_shape, int id, vec3 &normal) const
 {
 	for (const auto *tex : *textures)
 	{
 		if (tex->dmode == replace_normal)
 		{
 			float u, v;
-			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 
 			vec3 raw_normal_color(0.5f, 0.5f, 1.0f);
 			if (tex->interp == nearest)
@@ -299,7 +299,7 @@ void ray_tracer::apply_normal_map(simd_vec3 &calculator, simd_mat4 &calculator_m
 			calculator.subs(tangent_space_normal, ones, tangent_space_normal);
 
 			vec3 T, B;
-			min_shape->get_tangent(calculator, calculator_m, hit_point, T);
+			min_shape->get_tangent(calculator, calculator_m, hit_point, id, T);
 
 			float ndott;
 			calculator.dot(normal, T, ndott);
@@ -327,14 +327,14 @@ void ray_tracer::apply_normal_map(simd_vec3 &calculator, simd_mat4 &calculator_m
 }
 
 void ray_tracer::apply_bump_map(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, const std::vector<texture *> *textures,
-								const shape *min_shape, vec3 &normal) const
+								const shape *min_shape, int id, vec3 &normal) const
 {
 	for (const auto *tex : *textures)
 	{
 		if (tex->dmode == bump_normal)
 		{
 			float u, v;
-			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 
 			float du = 1.0f / tex->im->width;
 			float dv = 1.0f / tex->im->height;
@@ -361,7 +361,7 @@ void ray_tracer::apply_bump_map(simd_vec3 &calculator, simd_mat4 &calculator_m, 
 			float dh_dv = (intensity_v - intensity_c) * tex->BumpFactor;
 
 			vec3 T, B;
-			min_shape->get_tangent(calculator, calculator_m, hit_point, T);
+			min_shape->get_tangent(calculator, calculator_m, hit_point, id, T);
 
 			float ndott;
 			calculator.dot(normal, T, ndott);
@@ -387,11 +387,21 @@ void ray_tracer::apply_bump_map(simd_vec3 &calculator, simd_mat4 &calculator_m, 
 }
 
 void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
-						   vec3 &color, const float &raytime, const bool culling, int depth) const
+						   vec3 &color, const float &raytime, const bool culling, texture *bg, float pixelu, float pixelv, int depth) const
 {
 	if (depth >= max_depth)
 	{
-		color = backgroundcolor;
+		if (bg && bg->im)
+		{
+			if (bg->interp == nearest)
+				bg->im->sample_nearest(pixelu, pixelv, color);
+			else
+				bg->im->sample_bilinear(pixelu, pixelv, color);
+		}
+		else
+		{
+			color = backgroundcolor;
+		}
 		return;
 	}
 	float t;
@@ -407,7 +417,17 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 
 	if (!min_shape)
 	{
-		color = backgroundcolor;
+		if (bg && bg->im)
+		{
+			if (bg->interp == nearest)
+				bg->im->sample_nearest(pixelu, pixelv, color);
+			else
+				bg->im->sample_bilinear(pixelu, pixelv, color);
+		}
+		else
+		{
+			color = backgroundcolor;
+		}
 		return;
 	}
 	material *mat = min_shape->getMaterial(min_id);
@@ -417,8 +437,8 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	calculator.add(ray_origin, hit_point, hit_point);
 	vec3 normal;
 	min_shape->get_normal(calculator, calculator_m, hit_point, min_id, normal);
-	apply_normal_map(calculator, calculator_m, hit_point, textures, min_shape, normal);
-	apply_bump_map(calculator, calculator_m, hit_point, textures, min_shape, normal);
+	apply_normal_map(calculator, calculator_m, hit_point, textures, min_shape, min_id, normal);
+	apply_bump_map(calculator, calculator_m, hit_point, textures, min_shape, min_id, normal);
 	if (mat->mt == Mirror)
 	{
 		vec3 R;
@@ -426,11 +446,11 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		vec3 offset;
 		calculator.mult_scalar(normal, shadowrayepsilon, offset);
 		calculator.add(hit_point, offset, hit_point);
-		trace_rec(calculator, calculator_m, hit_point, R, color, raytime, culling, depth + 1);
+		trace_rec(calculator, calculator_m, hit_point, R, color, raytime, culling, bg, pixelu, pixelv, depth + 1);
 		calculator.mult(color, mat->MirrorReflectance, color);
 
 		vec3 own_color;
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, own_color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, bg, own_color);
 		calculator.add(color, own_color, color);
 	}
 	else if (mat->mt == Conductor)
@@ -485,11 +505,11 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		calculator.mult_scalar(normal, shadowrayepsilon, offset);
 		calculator.add(hit_point, offset, hit_point);
 
-		trace_rec(calculator, calculator_m, hit_point, R, reflectedColor, raytime, culling, depth + 1);
+		trace_rec(calculator, calculator_m, hit_point, R, reflectedColor, raytime, culling, bg, pixelu, pixelv, depth + 1);
 		calculator.mult(reflectedColor, F, color);
 
 		vec3 own_color;
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, own_color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, bg, own_color);
 		calculator.add(color, own_color, color);
 	}
 	else if (mat->mt == Dielectric)
@@ -520,7 +540,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		vec3 offsetR;
 		calculator.mult_scalar(normal, shadowrayepsilon, offsetR);
 		calculator.add(hit_point, offsetR, offsetR);
-		trace_rec(calculator, calculator_m, offsetR, reflectDir, reflectColor, raytime, culling, depth + 1);
+		trace_rec(calculator, calculator_m, offsetR, reflectDir, reflectColor, raytime, culling, bg, pixelu, pixelv, depth + 1);
 
 		calculator.mult(reflectColor, mat->MirrorReflectance, reflectColor);
 
@@ -532,7 +552,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 			vec3 offsetT;
 			calculator.mult_scalar(normal, -shadowrayepsilon, offsetT);
 			calculator.add(hit_point, offsetT, offsetT);
-			trace_rec(calculator, calculator_m, offsetT, refractDir, refractColor, raytime, false, depth + 1);
+			trace_rec(calculator, calculator_m, offsetT, refractDir, refractColor, raytime, false, bg, pixelu, pixelv, depth + 1);
 
 			if (!entering)
 			{
@@ -549,21 +569,21 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		calculator.add(reflectScaled, refractScaled, color);
 
 		vec3 own_color;
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, own_color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, bg, own_color);
 		calculator.add(color, own_color, color);
 	}
 	else
 	{
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, bg, color);
 	}
 }
 
 void ray_tracer::trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
-					   const int &index, const float &raytime, const bool culling, unsigned char *output) const
+					   const int &index, const float &raytime, const bool culling, texture *bg, float pixelu, float pixelv, unsigned char *output) const
 {
 	vec3 color;
 
-	trace_rec(calculator, calculator_m, ray_origin, ray_dir, color, raytime, culling, 0);
+	trace_rec(calculator, calculator_m, ray_origin, ray_dir, color, raytime, culling, bg, pixelu, pixelv, 0);
 
 	color.store();
 	output[index * 3] = static_cast<unsigned char>(std::clamp(color.get_x() * 255, 0.0f, 255.0f));

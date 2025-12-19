@@ -205,7 +205,7 @@ std::vector<texture *> *parser::get_textures(std::vector<image *> *images)
 		if (tex.HasMember("BumpFactor"))
 		{
 			std::string bump = tex["BumpFactor"].GetString();
-			t->BumpFactor = std::stoi(bump);
+			t->BumpFactor = std::stoi(bump) * 7;
 		}
 	};
 
@@ -616,14 +616,19 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		else
 		{
 			std::istringstream iss(mesh["Faces"]["_data"].GetString());
+			int offset = 0;
+			if (mesh["Faces"].HasMember("_vertexOffset"))
+			{
+				offset = std::stoi(mesh["Faces"]["_vertexOffset"].GetString());
+			}
 			long long i0, i1, i2;
 			std::vector<std::array<size_t, 3>> tris;
 			while (iss >> i0 >> i1 >> i2)
 			{
 				tris.emplace_back(std::array<size_t, 3>{
-					static_cast<size_t>(i0 - 1),
-					static_cast<size_t>(i1 - 1),
-					static_cast<size_t>(i2 - 1)});
+					static_cast<size_t>(i0 - 1 + offset),
+					static_cast<size_t>(i1 - 1 + offset),
+					static_cast<size_t>(i2 - 1 + offset)});
 			}
 
 			if (shadingMode == "smooth")
