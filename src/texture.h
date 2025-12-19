@@ -38,6 +38,7 @@ public:
 	int id;
 	DecalMode dmode;
 	Interpolation interp;
+	int BumpFactor = 10;
 	texture() = delete;
 	texture(image *im, int id, DecalMode dmode, Interpolation interp)
 		: im(im), id(id), dmode(dmode), interp(interp) {}

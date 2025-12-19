@@ -84,7 +84,7 @@ std::vector<texture *> *triangle::getTextures(int id)
 	return &m->mesh_infos[id].textures;
 }
 
-void triangle::calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
+void triangle::calculate_uv(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, float &u, float &v) const
 {
 	vec3 edge1, edge2, vp;
 	calculator.subs(c2, c1, edge1);
@@ -275,7 +275,7 @@ bool triangle::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const v
 	return t > EPSILON;
 }
 
-void triangle::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const
+void triangle::get_tangent(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, vec3 &tangent) const
 {
 	vec3 edge1, edge2;
 	calculator.subs(c2, c1, edge1);
@@ -413,43 +413,50 @@ bool sphere::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec
 	return true;
 }
 
-void sphere::calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
+void sphere::calculate_uv(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, float &u, float &v) const
 {
-	vec3 local_point;
+	vec3 obj_hit;
 	hit_point.store();
-
+	calculator_m.mult_vec(inv_model, hit_point, obj_hit, false);
 	vec3 p;
-	calculator.subs(hit_point, center, p);
+	calculator.subs(obj_hit, center, p);
 	calculator.normalize(p, p);
-
+	p.store();
 	float phi = atan2f(p.get_z(), p.get_x());
 	float theta = asinf(p.get_y());
 
 	const float PI = 3.14159265359f;
 
 	u = 1.0f - (phi + PI) / (2.0f * PI);
-	v = (theta + PI / 2.0f) / PI;
+	v = 1.0f - (theta + PI / 2.0f) / PI;
 }
 
-void sphere::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const
+void sphere::get_tangent(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, vec3 &tangent) const
 {
-	vec3 n;
-	calculator.subs(hit_point, center, n);
-	calculator.normalize(n, n);
+	vec3 obj_hit;
+	hit_point.store();
+	calculator_m.mult_vec(inv_model, hit_point, obj_hit, false);
 
-	vec3 up(0.0f, 1.0f, 0.0f);
+	vec3 p;
+	calculator.subs(obj_hit, center, p);
 
-	float dot_val;
-	calculator.dot(n, up, dot_val);
-	if (fabs(dot_val) > 0.999f)
+	float tx = -p.get_z();
+	float tz = p.get_x();
+
+	vec3 local_tangent;
+	if (tx == 0.0f && tz == 0.0f)
 	{
-		tangent = vec3(1.0f, 0.0f, 0.0f);
+		local_tangent = vec3(1.0f, 0.0f, 0.0f);
 	}
 	else
 	{
-		calculator.cross(up, n, tangent);
-		calculator.normalize(tangent, tangent);
+		local_tangent = vec3(tx, 0.0f, tz);
 	}
+
+	local_tangent.store();
+	calculator_m.mult_vec(model, local_tangent, tangent, true);
+
+	calculator.normalize(tangent, tangent);
 	tangent.store();
 }
 
@@ -486,7 +493,7 @@ bool plane::intersect(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3
 	return true;
 }
 
-void plane::calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float &v) const
+void plane::calculate_uv(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, float &u, float &v) const
 {
 	vec3 tangent, bitangent;
 	vec3 helper(1.0f, 0.0f, 0.0f);
@@ -507,7 +514,7 @@ void plane::calculate_uv(simd_vec3 &calculator, vec3 hit_point, float &u, float 
 	calculator.dot(vec_to_point, bitangent, v);
 }
 
-void plane::get_tangent(simd_vec3 &calculator, const vec3 &hit_point, vec3 &tangent) const
+void plane::get_tangent(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, vec3 &tangent) const
 {
 	vec3 helper(1.0f, 0.0f, 0.0f);
 

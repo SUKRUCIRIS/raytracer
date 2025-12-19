@@ -5,7 +5,7 @@
 #include <random>
 
 void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
-								 const std::vector<texture *> *textures, const vec3 &hit_point, const vec3 &ray_origin,
+								 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
 								 const shape *min_shape, const float &raytime, vec3 &color) const
 {
 	static thread_local shape *last_shadow_blocker = nullptr; // shadow cache optimization
@@ -24,7 +24,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		{
 			replacekd = true;
 			float u, v;
-			min_shape->calculate_uv(calculator, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, replacekd_color);
@@ -38,7 +38,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		{
 			blendkd = true;
 			float u, v;
-			min_shape->calculate_uv(calculator, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, replacekd_color);
@@ -54,7 +54,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		{
 			replaceks = true;
 			float u, v;
-			min_shape->calculate_uv(calculator, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, replaceks_color);
@@ -67,7 +67,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		else if (i->dmode == replace_all)
 		{
 			float u, v;
-			min_shape->calculate_uv(calculator, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
 			if (i->interp == nearest)
 			{
 				i->im->sample_nearest(u, v, color);
@@ -273,7 +273,7 @@ bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, c
 	return true;
 }
 
-void ray_tracer::apply_normal_map(simd_vec3 &calculator, const vec3 &hit_point, const std::vector<texture *> *textures,
+void ray_tracer::apply_normal_map(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, const std::vector<texture *> *textures,
 								  const shape *min_shape, vec3 &normal) const
 {
 	for (const auto *tex : *textures)
@@ -281,7 +281,7 @@ void ray_tracer::apply_normal_map(simd_vec3 &calculator, const vec3 &hit_point, 
 		if (tex->dmode == replace_normal)
 		{
 			float u, v;
-			min_shape->calculate_uv(calculator, hit_point, u, v);
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
 
 			vec3 raw_normal_color(0.5f, 0.5f, 1.0f);
 			if (tex->interp == nearest)
@@ -299,7 +299,7 @@ void ray_tracer::apply_normal_map(simd_vec3 &calculator, const vec3 &hit_point, 
 			calculator.subs(tangent_space_normal, ones, tangent_space_normal);
 
 			vec3 T, B;
-			min_shape->get_tangent(calculator, hit_point, T);
+			min_shape->get_tangent(calculator, calculator_m, hit_point, T);
 
 			float ndott;
 			calculator.dot(normal, T, ndott);
@@ -321,6 +321,66 @@ void ray_tracer::apply_normal_map(simd_vec3 &calculator, const vec3 &hit_point, 
 			calculator.add(new_normal, term3, new_normal);
 			calculator.normalize(new_normal, normal);
 
+			return;
+		}
+	}
+}
+
+void ray_tracer::apply_bump_map(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, const std::vector<texture *> *textures,
+								const shape *min_shape, vec3 &normal) const
+{
+	for (const auto *tex : *textures)
+	{
+		if (tex->dmode == bump_normal)
+		{
+			float u, v;
+			min_shape->calculate_uv(calculator, calculator_m, hit_point, u, v);
+
+			float du = 1.0f / tex->im->width;
+			float dv = 1.0f / tex->im->height;
+
+			vec3 h_center, h_u, h_v;
+
+			auto sample = [&](float uu, float vv, vec3 &out)
+			{
+				if (tex->interp == nearest)
+					tex->im->sample_nearest(uu, vv, out);
+				else
+					tex->im->sample_bilinear(uu, vv, out);
+			};
+
+			sample(u, v, h_center);
+			sample(u + du, v, h_u);
+			sample(u, v + dv, h_v);
+
+			float intensity_c = h_center.get_x();
+			float intensity_u = h_u.get_x();
+			float intensity_v = h_v.get_x();
+
+			float dh_du = (intensity_u - intensity_c) * tex->BumpFactor;
+			float dh_dv = (intensity_v - intensity_c) * tex->BumpFactor;
+
+			vec3 T, B;
+			min_shape->get_tangent(calculator, calculator_m, hit_point, T);
+
+			float ndott;
+			calculator.dot(normal, T, ndott);
+			vec3 temp_vec;
+			calculator.mult_scalar(normal, ndott, temp_vec);
+			calculator.subs(T, temp_vec, T);
+			calculator.normalize(T, T);
+
+			calculator.cross(normal, T, B);
+
+			vec3 p_u, p_v;
+			calculator.mult_scalar(T, dh_du, p_u);
+			calculator.mult_scalar(B, dh_dv, p_v);
+
+			vec3 new_normal;
+			calculator.subs(normal, p_u, new_normal);
+			calculator.subs(new_normal, p_v, new_normal);
+
+			calculator.normalize(new_normal, normal);
 			return;
 		}
 	}
@@ -357,7 +417,8 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	calculator.add(ray_origin, hit_point, hit_point);
 	vec3 normal;
 	min_shape->get_normal(calculator, calculator_m, hit_point, min_id, normal);
-	apply_normal_map(calculator, hit_point, textures, min_shape, normal);
+	apply_normal_map(calculator, calculator_m, hit_point, textures, min_shape, normal);
+	apply_bump_map(calculator, calculator_m, hit_point, textures, min_shape, normal);
 	if (mat->mt == Mirror)
 	{
 		vec3 R;

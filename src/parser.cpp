@@ -198,7 +198,15 @@ std::vector<texture *> *parser::get_textures(std::vector<image *> *images)
 				interp = bilinear;
 		}
 
-		textures->push_back(new texture(linkedImage, id, mode, interp));
+		texture *t = new texture(linkedImage, id, mode, interp);
+
+		textures->push_back(t);
+
+		if (tex.HasMember("BumpFactor"))
+		{
+			std::string bump = tex["BumpFactor"].GetString();
+			t->BumpFactor = std::stoi(bump);
+		}
 	};
 
 	if (texNode.IsArray())
