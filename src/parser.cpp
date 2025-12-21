@@ -143,29 +143,26 @@ std::vector<texture *> *parser::get_textures(std::vector<image *> *images)
 
 	auto processTexture = [&](const rapidjson::Value &tex)
 	{
-		if (!tex.HasMember("_id") || !tex.HasMember("ImageId"))
+		if (!tex.HasMember("_id"))
 			return;
 
 		int id = std::stoi(tex["_id"].GetString());
-		int imageId = std::stoi(tex["ImageId"].GetString());
 
-		image *linkedImage = nullptr;
-		if (images)
+		image *linkedImage = 0;
+		if (tex.HasMember("ImageId"))
 		{
-			for (auto *img : *images)
+			int imageId = std::stoi(tex["ImageId"].GetString());
+			if (images)
 			{
-				if (img->id == imageId)
+				for (auto *img : *images)
 				{
-					linkedImage = img;
-					break;
+					if (img->id == imageId)
+					{
+						linkedImage = img;
+						break;
+					}
 				}
 			}
-		}
-
-		if (!linkedImage)
-		{
-			my_printf("Warning: Texture %d refers to missing ImageId %d\n", id, imageId);
-			return;
 		}
 
 		DecalMode mode = replace_kd;
@@ -205,7 +202,55 @@ std::vector<texture *> *parser::get_textures(std::vector<image *> *images)
 		if (tex.HasMember("BumpFactor"))
 		{
 			std::string bump = tex["BumpFactor"].GetString();
-			t->BumpFactor = std::stoi(bump) * 7;
+			t->BumpFactor = std::stof(bump) * 30;
+		}
+		if (tex.HasMember("NoiseConversion"))
+		{
+			std::string NoiseConversionx = tex["NoiseConversion"].GetString();
+			NoiseConversion nc;
+			if (NoiseConversionx == "absval")
+			{
+				nc = absval;
+			}
+			else if (NoiseConversionx == "linear")
+			{
+				nc = linear;
+			}
+			t->nc = nc;
+		}
+		if (tex.HasMember("NoiseScale"))
+		{
+			t->NoiseScale = std::stof(tex["NoiseScale"].GetString());
+		}
+		if (tex.HasMember("NumOctaves"))
+		{
+			t->NumOctaves = std::stof(tex["NumOctaves"].GetString());
+		}
+		if (tex.HasMember("BlackColor"))
+		{
+			t->ischess = true;
+			float px, py, pz;
+			std::istringstream intStream(tex["BlackColor"].GetString());
+			intStream >> px >> py >> pz;
+			t->BlackColor.load(px, py, pz);
+		}
+		if (tex.HasMember("WhiteColor"))
+		{
+			t->ischess = true;
+			float px, py, pz;
+			std::istringstream intStream(tex["WhiteColor"].GetString());
+			intStream >> px >> py >> pz;
+			t->BlackColor.load(px, py, pz);
+		}
+		if (tex.HasMember("Scale"))
+		{
+			t->ischess = true;
+			t->Scale = std::stof(tex["Scale"].GetString());
+		}
+		if (tex.HasMember("Offset"))
+		{
+			t->ischess = true;
+			t->Offset = std::stof(tex["Offset"].GetString());
 		}
 	};
 
@@ -652,13 +697,18 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 				for (auto &tri : tris)
 				{
+					size_t uv_sz = uvs->size();
+					auto get_uv = [&](int index)
+					{
+						return (uv_sz == 0) ? 0.0f : uvs->at(index % uv_sz);
+					};
 					shapes->push_back(new triangle(
 						calculator,
 						&vertices->at(tri[0]),
 						&vertices->at(tri[1]),
 						&vertices->at(tri[2]),
-						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2), uvs->at(tri[1] * 2), uvs->at(tri[2] * 2)),
-						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2 + 1), uvs->at(tri[1] * 2 + 1), uvs->at(tri[2] * 2 + 1)),
+						vec3(get_uv(tri[0] * 2), get_uv(tri[1] * 2), get_uv(tri[2] * 2)),
+						vec3(get_uv(tri[0] * 2 + 1), get_uv(tri[1] * 2 + 1), get_uv(tri[2] * 2 + 1)),
 						vertex_normals[tri[0]],
 						vertex_normals[tri[1]],
 						vertex_normals[tri[2]],
@@ -669,13 +719,18 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 			{
 				for (auto &tri : tris)
 				{
+					size_t uv_sz = uvs->size();
+					auto get_uv = [&](int index)
+					{
+						return (uv_sz == 0) ? 0.0f : uvs->at(index % uv_sz);
+					};
 					shapes->push_back(new triangle(
 						calculator,
 						&vertices->at(tri[0]),
 						&vertices->at(tri[1]),
 						&vertices->at(tri[2]),
-						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2), uvs->at(tri[1] * 2), uvs->at(tri[2] * 2)),
-						uvs->size() == 0 ? vec3() : vec3(uvs->at(tri[0] * 2 + 1), uvs->at(tri[1] * 2 + 1), uvs->at(tri[2] * 2 + 1)),
+						vec3(get_uv(tri[0] * 2), get_uv(tri[1] * 2), get_uv(tri[2] * 2)),
+						vec3(get_uv(tri[0] * 2 + 1), get_uv(tri[1] * 2 + 1), get_uv(tri[2] * 2 + 1)),
 						&mat, ami));
 				}
 			}
@@ -800,13 +855,18 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 
 		if (iss >> i0 >> i1 >> i2)
 		{
+			size_t uv_sz = uvs->size();
+			auto get_uv = [&](int index)
+			{
+				return (uv_sz == 0) ? 0.0f : uvs->at(index % uv_sz);
+			};
 			shapes->push_back(new triangle(
 				calculator,
 				&vertices->at(static_cast<size_t>(i0 - 1)),
 				&vertices->at(static_cast<size_t>(i1 - 1)),
 				&vertices->at(static_cast<size_t>(i2 - 1)),
-				uvs->size() == 0 ? vec3() : vec3(uvs->at((i0 - 1) * 2), uvs->at((i1 - 1) * 2), uvs->at((i2 - 1) * 2)),
-				uvs->size() == 0 ? vec3() : vec3(uvs->at((i0 - 1) * 2 + 1), uvs->at((i1 - 1) * 2 + 1), uvs->at((i2 - 1) * 2 + 1)),
+				vec3(get_uv((i0 - 1) * 2), get_uv((i1 - 1) * 2), get_uv((i2 - 1) * 2)),
+				vec3(get_uv((i0 - 1) * 2 + 1), get_uv((i1 - 1) * 2 + 1), get_uv((i2 - 1) * 2 + 1)),
 				&mat,
 				ami));
 		}

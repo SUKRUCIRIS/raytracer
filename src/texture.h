@@ -31,6 +31,12 @@ enum Interpolation
 	bilinear
 };
 
+enum NoiseConversion
+{
+	absval,
+	linear
+};
+
 class texture
 {
 public:
@@ -38,8 +44,21 @@ public:
 	int id;
 	DecalMode dmode;
 	Interpolation interp;
-	int BumpFactor = 10;
+	float BumpFactor = 10;
+	float NoiseScale = 1;
+	NoiseConversion nc = NoiseConversion::linear;
+	float NumOctaves = 1;
+	bool ischess = false;
+	vec3 BlackColor;
+	vec3 WhiteColor;
+	float Scale;
+	float Offset;
 	texture() = delete;
 	texture(image *im, int id, DecalMode dmode, Interpolation interp)
 		: im(im), id(id), dmode(dmode), interp(interp) {}
+	void sample(float u, float v, vec3 h, vec3 &color) const;
 };
+
+float perlin(float u, float v, float m, float NoiseScale, NoiseConversion nc, float NumOctaves);
+
+bool is_black_chess(float u, float v, float Scale, float Offset);

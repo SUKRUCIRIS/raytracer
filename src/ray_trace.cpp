@@ -25,28 +25,14 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 			replacekd = true;
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			if (i->interp == nearest)
-			{
-				i->im->sample_nearest(u, v, replacekd_color);
-			}
-			else
-			{
-				i->im->sample_bilinear(u, v, replacekd_color);
-			}
+			i->sample(u, v, hit_point, replacekd_color);
 		}
 		else if (i->dmode == blend_kd)
 		{
 			blendkd = true;
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			if (i->interp == nearest)
-			{
-				i->im->sample_nearest(u, v, replacekd_color);
-			}
-			else
-			{
-				i->im->sample_bilinear(u, v, replacekd_color);
-			}
+			i->sample(u, v, hit_point, replacekd_color);
 			calculator.add(mat->DiffuseReflectance, replacekd_color, replacekd_color);
 			calculator.mult_scalar(replacekd_color, 0.5f, replacekd_color);
 		}
@@ -55,27 +41,13 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 			replaceks = true;
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			if (i->interp == nearest)
-			{
-				i->im->sample_nearest(u, v, replaceks_color);
-			}
-			else
-			{
-				i->im->sample_bilinear(u, v, replaceks_color);
-			}
+			i->sample(u, v, hit_point, replaceks_color);
 		}
 		else if (i->dmode == replace_all)
 		{
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			if (i->interp == nearest)
-			{
-				i->im->sample_nearest(u, v, color);
-			}
-			else
-			{
-				i->im->sample_bilinear(u, v, color);
-			}
+			i->sample(u, v, hit_point, color);
 			return;
 		}
 	}
@@ -284,14 +256,7 @@ void ray_tracer::apply_normal_map(simd_vec3 &calculator, simd_mat4 &calculator_m
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 
 			vec3 raw_normal_color(0.5f, 0.5f, 1.0f);
-			if (tex->interp == nearest)
-			{
-				tex->im->sample_nearest(u, v, raw_normal_color);
-			}
-			else
-			{
-				tex->im->sample_bilinear(u, v, raw_normal_color);
-			}
+			tex->sample(u, v, hit_point, raw_normal_color);
 
 			vec3 tangent_space_normal;
 			calculator.mult_scalar(raw_normal_color, 2.0f, tangent_space_normal);
@@ -333,54 +298,100 @@ void ray_tracer::apply_bump_map(simd_vec3 &calculator, simd_mat4 &calculator_m, 
 	{
 		if (tex->dmode == bump_normal)
 		{
-			float u, v;
-			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-
-			float du = 1.0f / tex->im->width;
-			float dv = 1.0f / tex->im->height;
-
-			vec3 h_center, h_u, h_v;
-
-			auto sample = [&](float uu, float vv, vec3 &out)
+			if (tex->im)
 			{
-				if (tex->interp == nearest)
-					tex->im->sample_nearest(uu, vv, out);
-				else
-					tex->im->sample_bilinear(uu, vv, out);
-			};
+				float u, v;
+				min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
 
-			sample(u, v, h_center);
-			sample(u + du, v, h_u);
-			sample(u, v + dv, h_v);
+				float du, dv;
+				vec3 hit_u, hit_v;
+				du = 1.0f / tex->im->width;
+				dv = 1.0f / tex->im->height;
 
-			float intensity_c = h_center.get_x();
-			float intensity_u = h_u.get_x();
-			float intensity_v = h_v.get_x();
+				vec3 h_center, h_u, h_v;
 
-			float dh_du = (intensity_u - intensity_c) * tex->BumpFactor;
-			float dh_dv = (intensity_v - intensity_c) * tex->BumpFactor;
+				tex->sample(u, v, hit_point, h_center);
+				tex->sample(u + du, v, hit_point, h_u);
+				tex->sample(u, v + dv, hit_point, h_v);
 
-			vec3 T, B;
-			min_shape->get_tangent(calculator, calculator_m, hit_point, id, T);
+				float intensity_c = h_center.get_x();
+				float intensity_u = h_u.get_x();
+				float intensity_v = h_v.get_x();
 
-			float ndott;
-			calculator.dot(normal, T, ndott);
-			vec3 temp_vec;
-			calculator.mult_scalar(normal, ndott, temp_vec);
-			calculator.subs(T, temp_vec, T);
-			calculator.normalize(T, T);
+				float dh_du = (intensity_u - intensity_c) * tex->BumpFactor;
+				float dh_dv = (intensity_v - intensity_c) * tex->BumpFactor;
 
-			calculator.cross(normal, T, B);
+				vec3 T, B;
+				min_shape->get_tangent(calculator, calculator_m, hit_point, id, T);
 
-			vec3 p_u, p_v;
-			calculator.mult_scalar(T, dh_du, p_u);
-			calculator.mult_scalar(B, dh_dv, p_v);
+				float ndott;
+				calculator.dot(normal, T, ndott);
+				vec3 temp_vec;
+				calculator.mult_scalar(normal, ndott, temp_vec);
+				calculator.subs(T, temp_vec, T);
+				calculator.normalize(T, T);
 
-			vec3 new_normal;
-			calculator.subs(normal, p_u, new_normal);
-			calculator.subs(new_normal, p_v, new_normal);
+				calculator.cross(normal, T, B);
 
-			calculator.normalize(new_normal, normal);
+				vec3 p_u, p_v;
+				calculator.mult_scalar(T, dh_du, p_u);
+				calculator.mult_scalar(B, dh_dv, p_v);
+
+				vec3 new_normal;
+				calculator.subs(normal, p_u, new_normal);
+				calculator.subs(new_normal, p_v, new_normal);
+
+				calculator.normalize(new_normal, normal);
+			}
+			else
+			{
+				float eps = 0.01f;
+				float inv_eps = 1.0f / eps;
+
+				vec3 h_x, h_y, h_z, h_c;
+				vec3 off_x, off_y, off_z;
+
+				calculator.add(hit_point, vec3(eps, 0, 0, 0), off_x);
+				calculator.add(hit_point, vec3(0, eps, 0, 0), off_y);
+				calculator.add(hit_point, vec3(0, 0, eps, 0), off_z);
+
+				hit_point.store();
+				off_x.store();
+				off_y.store();
+				off_z.store();
+
+				float d_u = 0, d_v = 0;
+				tex->sample(d_u, d_v, hit_point, h_c);
+				tex->sample(d_u, d_v, off_x, h_x);
+				tex->sample(d_u, d_v, off_y, h_y);
+				tex->sample(d_u, d_v, off_z, h_z);
+
+				h_c.store();
+				h_x.store();
+				h_y.store();
+				h_z.store();
+
+				float noise_c = h_c.get_x();
+
+				vec3 gradN(
+					(h_x.get_x() - noise_c) * inv_eps,
+					(h_y.get_x() - noise_c) * inv_eps,
+					(h_z.get_x() - noise_c) * inv_eps);
+
+				float g_dot_n;
+				calculator.dot(gradN, normal, g_dot_n);
+
+				vec3 n_component, surf_grad;
+				calculator.mult_scalar(normal, g_dot_n, n_component);
+				calculator.subs(gradN, n_component, surf_grad);
+
+				vec3 perturbation;
+				calculator.mult_scalar(surf_grad, tex->BumpFactor, perturbation);
+
+				vec3 new_normal;
+				calculator.subs(normal, perturbation, new_normal);
+				calculator.normalize(new_normal, normal);
+			}
 			return;
 		}
 	}
@@ -393,10 +404,8 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	{
 		if (bg && bg->im)
 		{
-			if (bg->interp == nearest)
-				bg->im->sample_nearest(pixelu, pixelv, color);
-			else
-				bg->im->sample_bilinear(pixelu, pixelv, color);
+			vec3 zort(pixelu, pixelv, 0);
+			bg->sample(pixelu, pixelv, zort, color);
 		}
 		else
 		{
@@ -419,10 +428,8 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	{
 		if (bg && bg->im)
 		{
-			if (bg->interp == nearest)
-				bg->im->sample_nearest(pixelu, pixelv, color);
-			else
-				bg->im->sample_bilinear(pixelu, pixelv, color);
+			vec3 zort(pixelu, pixelv, 0);
+			bg->sample(pixelu, pixelv, zort, color);
 		}
 		else
 		{
@@ -435,6 +442,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	vec3 hit_point;
 	calculator.mult_scalar(ray_dir, min_t, hit_point);
 	calculator.add(ray_origin, hit_point, hit_point);
+	hit_point.store();
 	vec3 normal;
 	min_shape->get_normal(calculator, calculator_m, hit_point, min_id, normal);
 	apply_normal_map(calculator, calculator_m, hit_point, textures, min_shape, min_id, normal);

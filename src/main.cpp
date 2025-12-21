@@ -27,7 +27,16 @@ std::string getBundledFFmpeg()
 
 void createVideosFromPngSequences(const std::string &folderPath)
 {
-	std::regex filePattern(R"(^(.+)_([0-9]+)\.png$)", std::regex::icase);
+	std::regex filePattern;
+	try
+	{
+		filePattern = std::regex(R"(^(.+)_(\d+)\.png$)", std::regex::ECMAScript | std::regex::icase);
+	}
+	catch (const std::regex_error &e)
+	{
+		std::cerr << "Regex construction failed: " << e.what() << " (Code: " << e.code() << ")" << std::endl;
+		return;
+	}
 
 	std::map<std::string, std::vector<std::pair<int, fs::path>>> sequences;
 

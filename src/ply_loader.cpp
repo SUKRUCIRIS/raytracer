@@ -79,10 +79,9 @@ void parser::load_ply(simd_vec3 &calculator,
 	std::string vertexIndexType = "int";
 	std::string vertexListCountType = "uchar";
 	std::vector<std::pair<std::string, std::string>> vertexProperties;
-
 	std::string format = "ascii";
 	bool has_normals = false;
-
+	bool has_uvs = false;
 	std::string current_element = "";
 
 	while (std::getline(file, line))
@@ -143,6 +142,8 @@ void parser::load_ply(simd_vec3 &calculator,
 
 				if (name == "nx" || name == "ny" || name == "nz")
 					has_normals = true;
+				if (name == "u" || name == "v" || name == "s" || name == "t")
+					has_uvs = true;
 			}
 			else if (current_element == "face")
 			{
@@ -167,11 +168,16 @@ void parser::load_ply(simd_vec3 &calculator,
 	}
 
 	size_t startIndex = vertices->size();
-
 	std::vector<vec3> loaded_normals;
+	std::vector<std::pair<float, float>> loaded_uvs;
+
 	if (has_normals || smooth_shading)
 	{
 		loaded_normals.reserve(vertexCount);
+	}
+	if (has_uvs)
+	{
+		loaded_uvs.reserve(vertexCount);
 	}
 
 	bool is_ascii = (format.find("ascii") != std::string::npos);
@@ -180,6 +186,7 @@ void parser::load_ply(simd_vec3 &calculator,
 	{
 		float vx = 0.0f, vy = 0.0f, vz = 0.0f;
 		float vnx = 0.0f, vny = 0.0f, vnz = 0.0f;
+		float vu = 0.0f, vv = 0.0f;
 		bool gotX = false, gotY = false, gotZ = false;
 
 		auto assign_prop = [&](const std::string &name, float val)
@@ -205,6 +212,10 @@ void parser::load_ply(simd_vec3 &calculator,
 				vny = val;
 			else if (name == "nz")
 				vnz = val;
+			else if (name == "u" || name == "s")
+				vu = val;
+			else if (name == "v" || name == "t")
+				vv = val;
 		};
 
 		if (is_ascii)
@@ -212,7 +223,7 @@ void parser::load_ply(simd_vec3 &calculator,
 			std::string vline;
 			if (!std::getline(file, vline))
 			{
-				my_printf("Unexpected EOF while reading ascii vertex %zu\n", vi);
+				my_printf("Unexpected EOF\n");
 				exit(-1);
 			}
 			std::istringstream viss(vline);
@@ -271,17 +282,14 @@ void parser::load_ply(simd_vec3 &calculator,
 			}
 		}
 
-		static bool warned_missing_xyz = false;
-		if ((!gotX || !gotY || !gotZ) && !warned_missing_xyz)
-		{
-			my_printf("Warning: PLY vertex properties did not include all x,y,z. Missing values will be zeroed.\n");
-			warned_missing_xyz = true;
-		}
-
 		vertices->emplace_back(vx, vy, vz);
-		if (has_normals)
+		if (has_normals || smooth_shading)
 		{
 			loaded_normals.emplace_back(vnx, vny, vnz);
+		}
+		if (has_uvs)
+		{
+			loaded_uvs.emplace_back(vu, vv);
 		}
 	}
 
@@ -300,7 +308,6 @@ void parser::load_ply(simd_vec3 &calculator,
 			return static_cast<int32_t>(read_uint8(f));
 		if (t == "char" || t == "int8")
 			return read_int8(f);
-		my_printf("Unsupported vertex index type '%s'\n", vertexIndexType.c_str());
 		exit(-1);
 	};
 
@@ -313,12 +320,10 @@ void parser::load_ply(simd_vec3 &calculator,
 			return read_uint16(f);
 		if (t == "uint" || t == "uint32")
 			return read_uint32(f);
-		my_printf("Unsupported list count type '%s'\n", vertexListCountType.c_str());
 		exit(-1);
 	};
 
 	std::vector<std::array<int32_t, 3>> pending_tris;
-	int triCount = 0;
 
 	for (size_t fi = 0; fi < faceCount; ++fi)
 	{
@@ -329,18 +334,15 @@ void parser::load_ply(simd_vec3 &calculator,
 		{
 			std::string fline;
 			if (!std::getline(file, fline))
-			{
-				my_printf("Unexpected EOF while reading ascii face %zu\n", fi);
-				exit(-1);
-			}
+				break;
 			std::istringstream fiss(fline);
 			fiss >> n;
 			face_indices.reserve(n);
 			int32_t idx;
 			for (uint32_t j = 0; j < n; ++j)
 			{
-				fiss >> idx;
-				face_indices.push_back(idx);
+				if (fiss >> idx)
+					face_indices.push_back(idx);
 			}
 		}
 		else
@@ -356,21 +358,9 @@ void parser::load_ply(simd_vec3 &calculator,
 		if (n < 3)
 			continue;
 
-		int32_t idx0 = face_indices[0];
-
 		for (size_t i = 1; i < n - 1; ++i)
 		{
-			int32_t idx1 = face_indices[i];
-			int32_t idx2 = face_indices[i + 1];
-
-			if (idx0 < 0 || idx1 < 0 || idx2 < 0 ||
-				idx0 >= (int)vertexCount || idx1 >= (int)vertexCount || idx2 >= (int)vertexCount)
-			{
-				continue;
-			}
-
-			pending_tris.push_back(std::array<int32_t, 3>{idx0, idx1, idx2});
-			triCount++;
+			pending_tris.push_back(std::array<int32_t, 3>{face_indices[0], face_indices[i], face_indices[i + 1]});
 		}
 	}
 
@@ -404,6 +394,15 @@ void parser::load_ply(simd_vec3 &calculator,
 
 	for (auto &tri : pending_tris)
 	{
+		vec3 u_coords(0, 0, 0);
+		vec3 v_coords(0, 0, 0);
+
+		if (has_uvs)
+		{
+			u_coords = vec3(loaded_uvs[tri[0]].first, loaded_uvs[tri[1]].first, loaded_uvs[tri[2]].first);
+			v_coords = vec3(loaded_uvs[tri[0]].second, loaded_uvs[tri[1]].second, loaded_uvs[tri[2]].second);
+		}
+
 		if (has_normals)
 		{
 			shapes->push_back(new triangle(
@@ -411,8 +410,7 @@ void parser::load_ply(simd_vec3 &calculator,
 				&vertices->at(startIndex + tri[0]),
 				&vertices->at(startIndex + tri[1]),
 				&vertices->at(startIndex + tri[2]),
-				vec3(),
-				vec3(),
+				u_coords, v_coords,
 				loaded_normals[tri[0]],
 				loaded_normals[tri[1]],
 				loaded_normals[tri[2]],
@@ -425,12 +423,11 @@ void parser::load_ply(simd_vec3 &calculator,
 				&vertices->at(startIndex + tri[0]),
 				&vertices->at(startIndex + tri[1]),
 				&vertices->at(startIndex + tri[2]),
-				vec3(),
-				vec3(),
+				u_coords, v_coords,
 				mat, ami));
 		}
 	}
 
-	my_printf("Loaded PLY: %zu vertices, %d tris. Smooth Shading: %s\n",
-			  vertexCount, triCount, has_normals ? "ON" : "OFF");
+	my_printf("Loaded PLY: %zu vertices, %zu tris. Smooth Shading: %s, UVs: %s\n",
+			  vertexCount, pending_tris.size(), has_normals ? "ON" : "OFF", has_uvs ? "ON" : "OFF");
 }
