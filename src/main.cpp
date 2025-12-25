@@ -156,7 +156,16 @@ void createVideosFromPngSequences(const std::string &folderPath)
 	}
 }
 
-void process_file(const char *filename, int thread_count)
+enum threading_type
+{
+	row_dynamic,
+	row_static,
+	square_dynamic,
+	pixel_dynamic,
+	MAXIMUM
+};
+
+void process_file(const char *filename, int thread_count, threading_type TT)
 {
 	auto start = std::chrono::high_resolution_clock::now();
 
@@ -168,31 +177,24 @@ void process_file(const char *filename, int thread_count)
 	simd_mat4 mat_calc(calculator);
 
 	auto transformations = p.get_transformations(mat_calc);
-
 	my_printf("transformations parsed\n");
 
 	auto cameras = p.get_camera(calculator, mat_calc, transformations);
-
 	my_printf("cameras parsed\n");
 
 	auto vertices = p.get_vertices();
-
 	my_printf("vertices parsed\n");
 
 	auto materials = p.get_materials();
-
 	my_printf("materials parsed\n");
 
 	auto images = p.get_images();
-
 	my_printf("images parsed\n");
 
 	auto textures = p.get_textures(images);
-
 	my_printf("textures parsed\n");
 
 	texture *bg = 0;
-
 	for (auto &&i : *textures)
 	{
 		if (i->dmode == replace_background)
@@ -203,25 +205,17 @@ void process_file(const char *filename, int thread_count)
 	}
 
 	auto uvs = p.get_uvs();
-
 	my_printf("uvs parsed\n");
 
 	std::vector<all_mesh_infos *> m;
-
 	auto shapes = p.get_shapes(calculator, mat_calc, vertices, materials, transformations, textures, uvs, &m);
-
 	my_printf("shapes parsed\n");
 
 	float intersectionepsilon = p.get_intersectionepsilon();
-
 	float shadowrayepsilon = p.get_shadowrayepsilon();
-
 	float maxdepth = p.get_maxrecursiondepth();
-
 	vec3 backgroundcolor = p.get_backgroundcolor();
-
 	vec3 ambientlight = p.get_ambientlight();
-
 	auto point_lights = p.get_pointlights(calculator, mat_calc, transformations);
 
 	stbi_flip_vertically_on_write(1);
@@ -242,60 +236,136 @@ void process_file(const char *filename, int thread_count)
 		unsigned char *output = new unsigned char[total_pixels * 3];
 
 		std::atomic<int> next_scanline(0);
+		std::atomic<int> next_tile(0);
+		std::atomic<int> next_pixel(0);
 
-		auto ray_thread = [rt, &camera, output, total_pixels, &next_scanline, bg](int t) mutable
+		// tile configuration
+		int tile_size = 32;
+		int tiles_x = (camera.resx + tile_size - 1) / tile_size;
+		int tiles_y = (camera.resy + tile_size - 1) / tile_size;
+		int total_tiles = tiles_x * tiles_y;
+
+		auto ray_thread = [&](int t) mutable
 		{
 			simd_vec3 calculatorp;
 			simd_mat4 calculator_m(calculatorp);
 
-			while (true)
+			// helper to process one pixel
+			auto process_pixel = [&](int i, int j)
 			{
-				int j = next_scanline++;
-				if (j % 100 == 0)
-				{
-					my_printf("Row %d\n", j);
-				}
-
-				if (j >= camera.resy)
-					break;
+				int index = j * camera.resx + i;
 
 				float pixelv = 1.0f - ((float)j / (float)(camera.resy - 1));
-				for (int i = 0; i < camera.resx; ++i)
+				float pixelu = (float)i / (float)(camera.resx - 1);
+
+				std::vector<camera::sample> samples = camera.get_samples(calculatorp, i, j);
+
+				float r_acc = 0.0f;
+				float g_acc = 0.0f;
+				float b_acc = 0.0f;
+
+				for (const auto &sample : samples)
 				{
-					int index = j * camera.resx + i;
+					unsigned char temp_color[3];
+					rt->trace(calculatorp, calculator_m, sample.position, sample.direction, 0, sample.time, true, bg, pixelu, pixelv, temp_color);
 
-					std::vector<camera::sample> samples = camera.get_samples(calculatorp, i, j);
-
-					float r_acc = 0.0f;
-					float g_acc = 0.0f;
-					float b_acc = 0.0f;
-
-					float pixelu = (float)i / (float)(camera.resx - 1);
-
-					for (const auto &sample : samples)
-					{
-						unsigned char temp_color[3];
-
-						rt->trace(calculatorp, calculator_m, sample.position, sample.direction, 0, sample.time, true, bg, pixelu, pixelv, temp_color);
-
-						r_acc += temp_color[0];
-						g_acc += temp_color[1];
-						b_acc += temp_color[2];
-					}
-
-					float num_samples = static_cast<float>(samples.size());
-					r_acc /= num_samples;
-					g_acc /= num_samples;
-					b_acc /= num_samples;
-
-					int pixel_index = index * 3;
-					output[pixel_index + 0] = (unsigned char)(r_acc > 255 ? 255 : r_acc);
-					output[pixel_index + 1] = (unsigned char)(g_acc > 255 ? 255 : g_acc);
-					output[pixel_index + 2] = (unsigned char)(b_acc > 255 ? 255 : b_acc);
+					r_acc += temp_color[0];
+					g_acc += temp_color[1];
+					b_acc += temp_color[2];
 				}
+
+				float num_samples = static_cast<float>(samples.size());
+				r_acc /= num_samples;
+				g_acc /= num_samples;
+				b_acc /= num_samples;
+
+				int pixel_index = index * 3;
+				output[pixel_index + 0] = (unsigned char)(r_acc > 255 ? 255 : r_acc);
+				output[pixel_index + 1] = (unsigned char)(g_acc > 255 ? 255 : g_acc);
+				output[pixel_index + 2] = (unsigned char)(b_acc > 255 ? 255 : b_acc);
+			};
+
+			switch (TT)
+			{
+			case row_dynamic:
+			{
+				while (true)
+				{
+					int j = next_scanline++;
+					if (j >= camera.resy)
+						break;
+
+					for (int i = 0; i < camera.resx; ++i)
+					{
+						process_pixel(i, j);
+					}
+				}
+				break;
+			}
+			case row_static:
+			{
+				int rows_per_thread = camera.resy / thread_count;
+				int start_y = t * rows_per_thread;
+				int end_y = (t == thread_count - 1) ? camera.resy : start_y + rows_per_thread;
+
+				for (int j = start_y; j < end_y; ++j)
+				{
+					for (int i = 0; i < camera.resx; ++i)
+					{
+						process_pixel(i, j);
+					}
+				}
+				break;
+			}
+			case square_dynamic:
+			{
+				while (true)
+				{
+					int tile_idx = next_tile++;
+					if (tile_idx >= total_tiles)
+						break;
+
+					int ty = tile_idx / tiles_x;
+					int tx = tile_idx % tiles_x;
+
+					int start_y = ty * tile_size;
+					int end_y = std::min(start_y + tile_size, camera.resy);
+					int start_x = tx * tile_size;
+					int end_x = std::min(start_x + tile_size, camera.resx);
+
+					for (int j = start_y; j < end_y; ++j)
+					{
+						for (int i = start_x; i < end_x; ++i)
+						{
+							process_pixel(i, j);
+						}
+					}
+				}
+				break;
+			}
+			case pixel_dynamic:
+			{
+				while (true)
+				{
+					int k = next_pixel++;
+					if (k >= total_pixels)
+						break;
+
+					int j = k / camera.resx;
+					int i = k % camera.resx;
+					process_pixel(i, j);
+				}
+				break;
+			}
+			default:
+				break;
 			}
 		};
 
+		if (thread_count > 4096 or thread_count < 1)
+		{
+			exit(-2);
+		}
 		std::thread *ths = new std::thread[thread_count];
 		for (int i = 0; i < thread_count; i++)
 		{
@@ -327,28 +397,20 @@ void process_file(const char *filename, int thread_count)
 	delete uvs;
 
 	for (auto &&i : *images)
-	{
 		delete i;
-	}
 	delete images;
 
 	for (auto &&i : *textures)
-	{
 		delete i;
-	}
 	delete textures;
 
 	for (auto &&i : m)
-	{
 		delete i;
-	}
 
 	delete rt;
 	delete cameras;
 	for (auto &&shape : *shapes)
-	{
 		delete shape;
-	}
 	delete shapes;
 	delete vertices;
 	delete materials;
@@ -361,18 +423,38 @@ int main(int argc, char **argv)
 
 	std::filesystem::create_directories("outputs");
 	int thread_count = 1;
+	threading_type TT = row_dynamic;
 	if (argc == 2)
 	{
 		thread_count = std::thread::hardware_concurrency();
+		TT = row_dynamic;
 	}
 	else if (argc == 3)
 	{
-		thread_count = atoi(argv[2]);
+		thread_count = std::thread::hardware_concurrency();
+		int tmp = atoi(argv[2]);
+		if (tmp >= threading_type::MAXIMUM || tmp < 0)
+		{
+			my_printf("Invalid threading type\n");
+			return -3;
+		}
+		TT = (threading_type)tmp;
+	}
+	else if (argc == 4)
+	{
+		thread_count = atoi(argv[3]);
+		int tmp = atoi(argv[2]);
+		if (tmp >= threading_type::MAXIMUM || tmp < 0)
+		{
+			my_printf("Invalid threading type\n");
+			return -3;
+		}
+		TT = (threading_type)tmp;
 	}
 	else
 	{
-		my_printf("Just give input json name and thread count:\n./raytracer json_file thread_count\n");
-		return 0;
+		my_printf("Just give input json name, threading type and thread count:\n./raytracer json_file threading_type thread_count\n");
+		return -2;
 	}
 	if (thread_count <= 0)
 	{
@@ -380,7 +462,9 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	my_printf("SIMD On / Thread count: %d\n", thread_count);
+	const char *threading_types[] = {"row_dynamic", "row_static", "square_dynamic", "pixel_dynamic"};
+
+	my_printf("SIMD On / Thread count: %d / Threading type: %s\n", thread_count, threading_types[(int)TT]);
 
 	std::vector<std::string> files;
 
@@ -408,7 +492,7 @@ int main(int argc, char **argv)
 
 	for (auto &&i : files)
 	{
-		process_file(i.c_str(), thread_count);
+		process_file(i.c_str(), thread_count, TT);
 	}
 
 	createVideosFromPngSequences("outputs");
