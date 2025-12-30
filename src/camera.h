@@ -3,6 +3,23 @@
 #include <vector>
 #include <string>
 
+enum tmotype
+{
+	Photographic,
+	Filmic,
+	ACES
+};
+
+struct Tonemap
+{
+	tmotype type;
+	float TMOOptions1;
+	float TMOOptions2;
+	float Saturation;
+	float Gamma;
+	std::string Extension;
+};
+
 class camera
 {
 public:
@@ -22,6 +39,8 @@ public:
 		float time;
 	};
 	vec3 center;
+	bool is_hdr = false;
+	std::vector<Tonemap> Tonemaps;
 	camera(simd_vec3 &calculator, simd_mat4 &calculator_m, float position_x, float position_y, float position_z,
 		   float gaze_x, float gaze_y, float gaze_z,
 		   float up_x, float up_y, float up_z, float neardistance,

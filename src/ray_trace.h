@@ -18,11 +18,11 @@ private:
 	const float max_depth;
 
 	void trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
-				   vec3 &color, const float &raytime, const bool culling, texture *bg, float pixelu, float pixelv, int depth) const;
+				   vec3 &color, const float &raytime, const bool culling, bool is_hdr, texture *bg, float pixelu, float pixelv, int depth) const;
 
 	void calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
 						 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
-						 const shape *min_shape, const float &raytime, int id, texture *bg, vec3 &color) const;
+						 const shape *min_shape, const float &raytime, int id, bool is_hdr, texture *bg, vec3 &color) const;
 
 	static void calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I, vec3 &R, float roughness);
 
@@ -55,5 +55,5 @@ public:
 		delete bvhx;
 	}
 	void trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
-			   const int &index, const float &raytime, const bool culling, texture *bg, float pixelu, float pixelv, unsigned char *output) const;
+			   const float &raytime, const bool culling, bool is_hdr, texture *bg, float pixelu, float pixelv, float *output) const;
 };

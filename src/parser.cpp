@@ -271,166 +271,107 @@ std::vector<texture *> *parser::get_textures(std::vector<image *> *images)
 
 std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t)
 {
-	std::vector<camera> *res = new std::vector<camera>;
-
-	const rapidjson::Value &cameras = d["Scene"]["Cameras"];
-
-	if (!cameras.HasMember("Camera"))
+	auto *res = new std::vector<camera>;
+	if (!d["Scene"].HasMember("Cameras"))
 		return res;
 
-	const rapidjson::Value &camNode = cameras["Camera"];
+	const rapidjson::Value &camNode = d["Scene"]["Cameras"]["Camera"];
 
 	auto parseCamera = [&](const rapidjson::Value &cam)
 	{
-		std::string tmp;
-
-		std::string type = "pinhole";
-		if (cam.HasMember("_type"))
-			type = cam["_type"].GetString();
-
+		std::string type = cam.HasMember("_type") ? cam["_type"].GetString() : "pinhole";
 		mat4 model;
-
 		processTrans(cam, calculator_m, t, model);
+
+		float pos[3], up[3], nearDist;
+		int resolution[2], samples = 1;
+		float focusDist = 0, aperture = 0;
+		std::string imgName = cam["ImageName"].GetString();
+
+		sscanf(cam["Position"].GetString(), "%f %f %f", &pos[0], &pos[1], &pos[2]);
+		sscanf(cam["Up"].GetString(), "%f %f %f", &up[0], &up[1], &up[2]);
+		sscanf(cam["NearDistance"].GetString(), "%f", &nearDist);
+		sscanf(cam["ImageResolution"].GetString(), "%d %d", &resolution[0], &resolution[1]);
+
+		if (cam.HasMember("NumSamples"))
+			sscanf(cam["NumSamples"].GetString(), "%d", &samples);
+		if (cam.HasMember("FocusDistance"))
+			sscanf(cam["FocusDistance"].GetString(), "%f", &focusDist);
+		if (cam.HasMember("ApertureSize"))
+			sscanf(cam["ApertureSize"].GetString(), "%f", &aperture);
+
+		camera *c = nullptr;
 
 		if (type == "lookAt")
 		{
-			float position_x, position_y, position_z;
-			float gaze_x, gaze_y, gaze_z;
-			float up_x, up_y, up_z;
-			float neardistance;
-			float fovY;
-			int NumSamples;
-			float FocusDistance, ApertureSize;
-			int resx, resy;
+			float gaze[3], fovY;
+			sscanf(cam["GazePoint"].GetString(), "%f %f %f", &gaze[0], &gaze[1], &gaze[2]);
+			sscanf(cam["FovY"].GetString(), "%f", &fovY);
 
-			tmp = cam["Position"].GetString();
-			sscanf(tmp.c_str(), "%f %f %f", &position_x, &position_y, &position_z);
-
-			tmp = cam["GazePoint"].GetString();
-			sscanf(tmp.c_str(), "%f %f %f", &gaze_x, &gaze_y, &gaze_z);
-
-			tmp = cam["Up"].GetString();
-			sscanf(tmp.c_str(), "%f %f %f", &up_x, &up_y, &up_z);
-
-			tmp = cam["FovY"].GetString();
-			sscanf(tmp.c_str(), "%f", &fovY);
-
-			tmp = cam["NearDistance"].GetString();
-			sscanf(tmp.c_str(), "%f", &neardistance);
-
-			tmp = cam["ImageResolution"].GetString();
-			sscanf(tmp.c_str(), "%d %d", &resx, &resy);
-
-			if (cam.HasMember("NumSamples"))
-			{
-				tmp = cam["NumSamples"].GetString();
-				sscanf(tmp.c_str(), "%d", &NumSamples);
-			}
-			else
-			{
-				NumSamples = 1;
-			}
-
-			if (cam.HasMember("FocusDistance"))
-			{
-				tmp = cam["FocusDistance"].GetString();
-				sscanf(tmp.c_str(), "%f", &FocusDistance);
-			}
-			else
-			{
-				FocusDistance = 0;
-			}
-
-			if (cam.HasMember("ApertureSize"))
-			{
-				tmp = cam["ApertureSize"].GetString();
-				sscanf(tmp.c_str(), "%f", &ApertureSize);
-			}
-			else
-			{
-				ApertureSize = 0;
-			}
-
-			tmp = cam["ImageName"].GetString();
-
-			res->emplace_back(
-				calculator, calculator_m, position_x, position_y, position_z,
-				gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
-				neardistance, fovY, resx, resy, NumSamples, FocusDistance, ApertureSize, tmp, model);
+			c = new camera(calculator, calculator_m, pos[0], pos[1], pos[2],
+						   gaze[0], gaze[1], gaze[2], up[0], up[1], up[2],
+						   nearDist, fovY, resolution[0], resolution[1], samples,
+						   focusDist, aperture, imgName, model);
 		}
 		else
 		{
-			float position_x, position_y, position_z;
-			float gaze_x, gaze_y, gaze_z;
-			float up_x, up_y, up_z;
-			float nearp_left, nearp_right, nearp_bottom, nearp_top;
-			float neardistance;
-			int NumSamples;
-			float FocusDistance, ApertureSize;
-			int resx, resy;
+			float gaze[3], np[4];
+			sscanf(cam["Gaze"].GetString(), "%f %f %f", &gaze[0], &gaze[1], &gaze[2]);
+			sscanf(cam["NearPlane"].GetString(), "%f %f %f %f", &np[0], &np[1], &np[2], &np[3]);
 
-			tmp = cam["Position"].GetString();
-			sscanf(tmp.c_str(), "%f %f %f", &position_x, &position_y, &position_z);
-
-			tmp = cam["Gaze"].GetString();
-			sscanf(tmp.c_str(), "%f %f %f", &gaze_x, &gaze_y, &gaze_z);
-
-			tmp = cam["Up"].GetString();
-			sscanf(tmp.c_str(), "%f %f %f", &up_x, &up_y, &up_z);
-
-			tmp = cam["NearPlane"].GetString();
-			sscanf(tmp.c_str(), "%f %f %f %f", &nearp_left, &nearp_right, &nearp_bottom, &nearp_top);
-
-			tmp = cam["NearDistance"].GetString();
-			sscanf(tmp.c_str(), "%f", &neardistance);
-
-			tmp = cam["ImageResolution"].GetString();
-			sscanf(tmp.c_str(), "%d %d", &resx, &resy);
-
-			if (cam.HasMember("NumSamples"))
-			{
-				tmp = cam["NumSamples"].GetString();
-				sscanf(tmp.c_str(), "%d", &NumSamples);
-			}
-			else
-			{
-				NumSamples = 1;
-			}
-
-			if (cam.HasMember("FocusDistance"))
-			{
-				tmp = cam["FocusDistance"].GetString();
-				sscanf(tmp.c_str(), "%f", &FocusDistance);
-			}
-			else
-			{
-				FocusDistance = 0;
-			}
-
-			if (cam.HasMember("ApertureSize"))
-			{
-				tmp = cam["ApertureSize"].GetString();
-				sscanf(tmp.c_str(), "%f", &ApertureSize);
-			}
-			else
-			{
-				ApertureSize = 0;
-			}
-
-			tmp = cam["ImageName"].GetString();
-
-			res->emplace_back(calculator, calculator_m, position_x, position_y, position_z,
-							  gaze_x, gaze_y, gaze_z, up_x, up_y, up_z,
-							  neardistance, nearp_left, nearp_right, nearp_bottom, nearp_top,
-							  resx, resy, NumSamples, FocusDistance, ApertureSize, tmp, model);
+			c = new camera(calculator, calculator_m, pos[0], pos[1], pos[2],
+						   gaze[0], gaze[1], gaze[2], up[0], up[1], up[2],
+						   nearDist, np[0], np[1], np[2], np[3],
+						   resolution[0], resolution[1], samples,
+						   focusDist, aperture, imgName, model);
 		}
+
+		c->is_hdr = imgName.ends_with(".exr");
+
+		if (cam.HasMember("Tonemap"))
+		{
+			auto extractTonemap = [&](const rapidjson::Value &val)
+			{
+				Tonemap tm{Photographic, 0.f, 0.f, 1.f, 2.2f, ""};
+
+				if (val.HasMember("TMO"))
+				{
+					std::string s = val["TMO"].GetString();
+					if (s == "Filmic")
+						tm.type = Filmic;
+					else if (s == "ACES")
+						tm.type = ACES;
+				}
+
+				if (val.HasMember("TMOOptions"))
+					sscanf(val["TMOOptions"].GetString(), "%f %f", &tm.TMOOptions1, &tm.TMOOptions2);
+				if (val.HasMember("Saturation"))
+					sscanf(val["Saturation"].GetString(), "%f", &tm.Saturation);
+				if (val.HasMember("Gamma"))
+					sscanf(val["Gamma"].GetString(), "%f", &tm.Gamma);
+				if (val.HasMember("Extension"))
+					tm.Extension = val["Extension"].GetString();
+
+				c->Tonemaps.push_back(tm);
+			};
+
+			const auto &tmNode = cam["Tonemap"];
+			if (tmNode.IsArray())
+				for (auto &e : tmNode.GetArray())
+					extractTonemap(e);
+			else if (tmNode.IsObject())
+				extractTonemap(tmNode);
+		}
+
+		res->emplace_back(*c);
+		delete c;
 	};
 
-	if (camNode.IsObject())
-		parseCamera(camNode);
-	else if (camNode.IsArray())
+	if (camNode.IsArray())
 		for (auto &c : camNode.GetArray())
 			parseCamera(c);
+	else if (camNode.IsObject())
+		parseCamera(camNode);
 
 	return res;
 }
