@@ -597,4 +597,7 @@ void ray_tracer::trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec
 	trace_rec(calculator, calculator_m, ray_origin, ray_dir, color, raytime, culling, is_hdr, bg, pixelu, pixelv, 0);
 
 	color.store();
+	output[0] = color.get_x();
+	output[1] = color.get_y();
+	output[2] = color.get_z();
 }
