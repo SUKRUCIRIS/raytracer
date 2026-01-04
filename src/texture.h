@@ -5,13 +5,15 @@ class image
 {
 public:
 	unsigned char *data;
+	float *hdr_data;
+	bool is_hdr;
 	int id;
 	int width, height, channels;
 	image() = delete;
 	image(const char *filename, int id);
 	~image();
-	void sample_nearest(float u, float v, vec3 &color);
-	void sample_bilinear(float u, float v, vec3 &color);
+	void sample_nearest(float u, float v, vec3 &color) const;
+	void sample_bilinear(float u, float v, vec3 &color) const;
 };
 
 enum DecalMode

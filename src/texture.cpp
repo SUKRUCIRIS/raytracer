@@ -1,30 +1,69 @@
 #include "texture.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "../third_party/stb/stb_image.h"
+#ifndef TINYEXR_IMPLEMENTATION
+#define TINYEXR_IMPLEMENTATION
+#endif
+#include "../third_party/tinyexr/tinyexr.h"
+
+bool is_exr(const char *filename)
+{
+	std::string fn(filename);
+	if (fn.length() < 4)
+		return false;
+	std::string ext = fn.substr(fn.length() - 4);
+	return ext == ".exr" || ext == ".EXR";
+}
 
 image::image(const char *filename, int id) : id(id)
 {
-	data = stbi_load(filename, &width, &height, &channels, 3);
+	data = nullptr;
+	hdr_data = nullptr;
+	is_hdr = is_exr(filename);
 
-	if (!data)
+	if (is_hdr)
 	{
-		printf("Error: Could not load texture %s\n", filename);
-		width = 0;
-		height = 0;
+		const char *err = nullptr;
+		int ret = LoadEXR(&hdr_data, &width, &height, filename, &err);
+
+		if (ret != TINYEXR_SUCCESS)
+		{
+			if (err)
+			{
+				printf("TinyEXR Error: %s\n", err);
+				FreeEXRErrorMessage(err);
+			}
+			width = 0;
+			height = 0;
+		}
+		else
+		{
+			channels = 4;
+		}
+	}
+	else
+	{
+		data = stbi_load(filename, &width, &height, &channels, 3);
+		if (!data)
+		{
+			printf("Error: Could not load texture %s\n", filename);
+			width = 0;
+			height = 0;
+		}
 	}
 }
 
 image::~image()
 {
 	if (data)
-	{
 		stbi_image_free(data);
-	}
+	if (hdr_data)
+		free(hdr_data);
 }
 
-void image::sample_nearest(float u, float v, vec3 &color)
+void image::sample_nearest(float u, float v, vec3 &color) const
 {
-	if (!data)
+	if (!data && !hdr_data)
 		return;
 
 	u -= std::floor(u);
@@ -38,18 +77,24 @@ void image::sample_nearest(float u, float v, vec3 &color)
 	if (y >= height)
 		y = height - 1;
 
-	int index = (y * width + x) * 3;
-
-	float r = data[index + 0] * (1.0f / 255.0f);
-	float g = data[index + 1] * (1.0f / 255.0f);
-	float b = data[index + 2] * (1.0f / 255.0f);
-
-	color.load(r, g, b);
+	if (is_hdr)
+	{
+		int index = (y * width + x) * 4;
+		color.load(hdr_data[index + 0], hdr_data[index + 1], hdr_data[index + 2]);
+	}
+	else
+	{
+		int index = (y * width + x) * 3;
+		float r = data[index + 0] * (1.0f / 255.0f);
+		float g = data[index + 1] * (1.0f / 255.0f);
+		float b = data[index + 2] * (1.0f / 255.0f);
+		color.load(r, g, b);
+	}
 }
 
-void image::sample_bilinear(float u, float v, vec3 &color)
+void image::sample_bilinear(float u, float v, vec3 &color) const
 {
-	if (!data)
+	if (!data && !hdr_data)
 		return;
 
 	u -= std::floor(u);
@@ -71,27 +116,53 @@ void image::sample_bilinear(float u, float v, vec3 &color)
 	int y0 = (y % height + height) % height;
 	int y1 = ((y + 1) % height + height) % height;
 
-	int row0_idx = y0 * width * 3;
-	int row1_idx = y1 * width * 3;
+	int stride = is_hdr ? 4 : 3;
 
-	int idx00 = row0_idx + x0 * 3;
-	int idx10 = row0_idx + x1 * 3;
-	int idx01 = row1_idx + x0 * 3;
-	int idx11 = row1_idx + x1 * 3;
+	int row0_idx = y0 * width * stride;
+	int row1_idx = y1 * width * stride;
+
+	int idx00 = row0_idx + x0 * stride;
+	int idx10 = row0_idx + x1 * stride;
+	int idx01 = row1_idx + x0 * stride;
+	int idx11 = row1_idx + x1 * stride;
 
 	float final_color[3];
 
 	for (int c = 0; c < 3; ++c)
 	{
-		float top = data[idx00 + c] * u_opp + data[idx10 + c] * u_ratio;
-		float bot = data[idx01 + c] * u_opp + data[idx11 + c] * u_ratio;
+		float val00, val10, val01, val11;
+
+		if (is_hdr)
+		{
+			val00 = hdr_data[idx00 + c];
+			val10 = hdr_data[idx10 + c];
+			val01 = hdr_data[idx01 + c];
+			val11 = hdr_data[idx11 + c];
+		}
+		else
+		{
+			val00 = data[idx00 + c];
+			val10 = data[idx10 + c];
+			val01 = data[idx01 + c];
+			val11 = data[idx11 + c];
+		}
+
+		float top = val00 * u_opp + val10 * u_ratio;
+		float bot = val01 * u_opp + val11 * u_ratio;
 		final_color[c] = top * v_opp + bot * v_ratio;
 	}
 
-	color.load(
-		final_color[0] * (1.0f / 255.0f),
-		final_color[1] * (1.0f / 255.0f),
-		final_color[2] * (1.0f / 255.0f));
+	if (is_hdr)
+	{
+		color.load(final_color[0], final_color[1], final_color[2]);
+	}
+	else
+	{
+		color.load(
+			final_color[0] * (1.0f / 255.0f),
+			final_color[1] * (1.0f / 255.0f),
+			final_color[2] * (1.0f / 255.0f));
+	}
 }
 
 void texture::sample(float u, float v, vec3 h, vec3 &color) const

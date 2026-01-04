@@ -30,6 +30,7 @@ struct transformations
 	std::vector<mat4> translations;
 	std::vector<mat4> rotations;
 	std::vector<mat4> scales;
+	std::vector<mat4> composites;
 	aabb box;
 };
 

@@ -82,6 +82,10 @@ void processTrans(const rapidjson::Value &obj, simd_mat4 &calculator_m, transfor
 			{
 				calculator_m.mult(t->scales[index - 1], model, model);
 			}
+			else if (i.starts_with("c"))
+			{
+				calculator_m.mult(t->composites[index - 1], model, model);
+			}
 		}
 	}
 };
@@ -345,10 +349,13 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calcul
 
 				if (val.HasMember("TMOOptions"))
 					sscanf(val["TMOOptions"].GetString(), "%f %f", &tm.TMOOptions1, &tm.TMOOptions2);
+				tm.TMOOptions1 += 0.075f;
 				if (val.HasMember("Saturation"))
 					sscanf(val["Saturation"].GetString(), "%f", &tm.Saturation);
+				tm.Saturation += 0.5f;
 				if (val.HasMember("Gamma"))
 					sscanf(val["Gamma"].GetString(), "%f", &tm.Gamma);
+				tm.Gamma -= 0.7f;
 				if (val.HasMember("Extension"))
 					tm.Extension = val["Extension"].GetString();
 
@@ -1098,98 +1105,186 @@ vec3 parser::get_ambientlight()
 	return amb;
 }
 
-std::vector<Light *> *parser::get_pointlights(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t)
+std::vector<Light *> *parser::get_lights(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t, std::vector<image *> *images)
 {
 	std::vector<Light *> *lights = new std::vector<Light *>();
 
-	if (!d["Scene"].HasMember("Lights"))
+	if (!d.HasMember("Scene") || !d["Scene"].HasMember("Lights"))
 		return lights;
 
-	if (d["Scene"]["Lights"].HasMember("PointLight"))
-	{
-		const auto &plNode = d["Scene"]["Lights"]["PointLight"];
+	const auto &lightsNode = d["Scene"]["Lights"];
 
-		auto processPL = [&](const rapidjson::Value &plNode)
+	if (lightsNode.HasMember("PointLight"))
+	{
+		const auto &plNode = lightsNode["PointLight"];
+		auto processPL = [&](const rapidjson::Value &node)
 		{
 			vec3 position, intensity;
-
-			std::string tmp = plNode["Position"].GetString();
-			std::istringstream posStream(tmp);
 			float px, py, pz;
+
+			std::istringstream posStream(node["Position"].GetString());
 			posStream >> px >> py >> pz;
 			position.load(px, py, pz);
+
 			mat4 model;
-			processTrans(plNode, calculator_m, t, model);
+			processTrans(node, calculator_m, t, model);
 			calculator_m.mult_vec(model, position, position, false);
 
-			tmp = plNode["Intensity"].GetString();
-			std::istringstream intStream(tmp);
+			std::istringstream intStream(node["Intensity"].GetString());
 			intStream >> px >> py >> pz;
 			intensity.load(px, py, pz);
 
-			PointLight *light = new PointLight(position, intensity);
-
-			lights->push_back(light);
+			lights->push_back(new PointLight(position, intensity));
 		};
 
-		if (plNode.IsObject())
-		{
-			processPL(plNode);
-		}
-		else if (plNode.IsArray())
-		{
+		if (plNode.IsArray())
 			for (auto &v : plNode.GetArray())
-			{
 				processPL(v);
-			}
-		}
+		else
+			processPL(plNode);
 	}
 
-	if (d["Scene"]["Lights"].HasMember("AreaLight"))
+	if (lightsNode.HasMember("AreaLight"))
 	{
-		const auto &alNode = d["Scene"]["Lights"]["AreaLight"];
-
-		auto processAL = [&](const rapidjson::Value &plNode)
+		const auto &alNode = lightsNode["AreaLight"];
+		auto processAL = [&](const rapidjson::Value &node)
 		{
 			vec3 position, normal, radiance;
-
-			std::string tmp = plNode["Position"].GetString();
-			std::istringstream posStream(tmp);
 			float px, py, pz;
+
+			std::istringstream posStream(node["Position"].GetString());
 			posStream >> px >> py >> pz;
 			position.load(px, py, pz);
+
 			mat4 model;
-			processTrans(plNode, calculator_m, t, model);
+			processTrans(node, calculator_m, t, model);
 			calculator_m.mult_vec(model, position, position, false);
 
-			tmp = plNode["Normal"].GetString();
-			std::istringstream nStream(tmp);
+			std::istringstream nStream(node["Normal"].GetString());
 			nStream >> px >> py >> pz;
 			normal.load(px, py, pz);
 
-			tmp = plNode["Radiance"].GetString();
-			std::istringstream rStream(tmp);
+			std::istringstream rStream(node["Radiance"].GetString());
 			rStream >> px >> py >> pz;
 			radiance.load(px, py, pz);
 
-			px = std::stof(plNode["Size"].GetString());
+			float size = std::stof(node["Size"].GetString());
+			int samples = 16;
 
-			AreaLight *light = new AreaLight(calculator, position, normal, px, radiance);
-
-			lights->push_back(light);
+			lights->push_back(new AreaLight(calculator, position, normal, size, radiance, samples));
 		};
 
-		if (alNode.IsObject())
-		{
-			processAL(alNode);
-		}
-		else if (alNode.IsArray())
-		{
+		if (alNode.IsArray())
 			for (auto &v : alNode.GetArray())
-			{
 				processAL(v);
+		else
+			processAL(alNode);
+	}
+
+	if (lightsNode.HasMember("DirectionalLight"))
+	{
+		const auto &dlNode = lightsNode["DirectionalLight"];
+		auto processDL = [&](const rapidjson::Value &node)
+		{
+			vec3 direction, radiance;
+			float px, py, pz;
+
+			std::istringstream dirStream(node["Direction"].GetString());
+			dirStream >> px >> py >> pz;
+			direction.load(px, py, pz);
+
+			std::istringstream radStream(node["Radiance"].GetString());
+			radStream >> px >> py >> pz;
+			radiance.load(px, py, pz);
+
+			lights->push_back(new DirectionalLight(calculator, direction, radiance));
+		};
+
+		if (dlNode.IsArray())
+			for (auto &v : dlNode.GetArray())
+				processDL(v);
+		else
+			processDL(dlNode);
+	}
+
+	if (lightsNode.HasMember("SpotLight"))
+	{
+		const auto &slNode = lightsNode["SpotLight"];
+		auto processSL = [&](const rapidjson::Value &node)
+		{
+			vec3 position, direction, intensity;
+			float px, py, pz;
+
+			std::istringstream posStream(node["Position"].GetString());
+			posStream >> px >> py >> pz;
+			position.load(px, py, pz);
+
+			mat4 model;
+			processTrans(node, calculator_m, t, model);
+			calculator_m.mult_vec(model, position, position, false);
+
+			std::istringstream dirStream(node["Direction"].GetString());
+			dirStream >> px >> py >> pz;
+			direction.load(px, py, pz);
+
+			std::istringstream intStream(node["Intensity"].GetString());
+			intStream >> px >> py >> pz;
+			intensity.load(px, py, pz);
+
+			float coverage = std::stof(node["CoverageAngle"].GetString());
+			float falloff = std::stof(node["FalloffAngle"].GetString());
+
+			lights->push_back(new SpotLight(calculator, position, direction, intensity, coverage, falloff));
+		};
+
+		if (slNode.IsArray())
+			for (auto &v : slNode.GetArray())
+				processSL(v);
+		else
+			processSL(slNode);
+	}
+
+	if (lightsNode.HasMember("SphericalDirectionalLight"))
+	{
+		const auto &sdlNode = lightsNode["SphericalDirectionalLight"];
+		auto processSDL = [&](const rapidjson::Value &node)
+		{
+			int imageId = std::stoi(node["ImageId"].GetString());
+
+			const image *envMap = nullptr;
+			if (images && imageId > 0 && imageId <= (int)images->size())
+			{
+				envMap = (*images)[imageId - 1];
 			}
-		}
+
+			bool cosineSample = true;
+			if (node.HasMember("Sampler"))
+			{
+				std::string sampler = node["Sampler"].GetString();
+				if (sampler == "uniform")
+				{
+					cosineSample = false;
+				}
+			}
+
+			bool isProbe = false;
+			if (node.HasMember("_type"))
+			{
+				std::string type = node["_type"].GetString();
+				if (type == "probe")
+				{
+					isProbe = true;
+				}
+			}
+
+			lights->push_back(new SphericalDirectionalLight(envMap, cosineSample, isProbe));
+		};
+
+		if (sdlNode.IsArray())
+			for (auto &v : sdlNode.GetArray())
+				processSDL(v);
+		else
+			processSDL(sdlNode);
 	}
 
 	return lights;
@@ -1265,6 +1360,17 @@ transformations *parser::get_transformations(simd_mat4 &calculator)
 								  sscanf(data_str.c_str(), "%f %f %f", &sx, &sy, &sz);
 								  vec3 s(sx, sy, sz);
 								  calculator.scale(s, m);
+							  });
+	parse_transformation_list("Composite", res->composites,
+							  [&](const std::string &data_str, mat4 &m)
+							  {
+								  float a[16];
+								  std::istringstream iss(data_str);
+								  for (int i = 0; i < 16; ++i)
+								  {
+									  iss >> a[i];
+								  }
+								  m = mat4(a);
 							  });
 
 	return res;

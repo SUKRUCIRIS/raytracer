@@ -38,5 +38,5 @@ public:
 	float get_maxrecursiondepth();
 	vec3 get_backgroundcolor();
 	vec3 get_ambientlight();
-	std::vector<Light *> *get_pointlights(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t);
+	std::vector<Light *> *get_lights(simd_vec3 &calculator, simd_mat4 &calculator_m, transformations *t, std::vector<image *> *images);
 };

@@ -1,5 +1,6 @@
 #pragma once
 #include "algebra.h"
+#include "texture.h"
 
 class Light
 {
@@ -13,6 +14,7 @@ public:
 
 	virtual void get_sample(simd_vec3 &calculator,
 							const vec3 &hit_point,
+							const vec3 &normal,
 							float rand_u, float rand_v,
 							vec3 &sample_pos,
 							vec3 &incident_radiance,
@@ -32,6 +34,7 @@ public:
 
 	void get_sample(simd_vec3 &calculator,
 					const vec3 &hit_point,
+					const vec3 &normal,
 					float rand_u, float rand_v,
 					vec3 &sample_pos,
 					vec3 &incident_radiance,
@@ -57,6 +60,71 @@ public:
 
 	void get_sample(simd_vec3 &calculator,
 					const vec3 &hit_point,
+					const vec3 &normal,
+					float rand_u, float rand_v,
+					vec3 &sample_pos,
+					vec3 &incident_radiance,
+					vec3 &light_dir,
+					float &dist) const override;
+};
+
+class DirectionalLight : public Light
+{
+public:
+	vec3 direction;
+	vec3 radiance;
+
+	DirectionalLight(simd_vec3 &calculator, vec3 dir, vec3 rad);
+
+	int get_sample_count() const override;
+
+	void get_sample(simd_vec3 &calculator,
+					const vec3 &hit_point,
+					const vec3 &normal,
+					float rand_u, float rand_v,
+					vec3 &sample_pos,
+					vec3 &incident_radiance,
+					vec3 &light_dir,
+					float &dist) const override;
+};
+
+class SpotLight : public Light
+{
+public:
+	vec3 position;
+	vec3 direction;
+	vec3 intensity;
+	float coverage_angle_cos;
+	float falloff_angle_cos;
+
+	SpotLight(simd_vec3 &calculator, vec3 pos, vec3 dir, vec3 inten, float coverage_deg, float falloff_deg);
+
+	int get_sample_count() const override;
+
+	void get_sample(simd_vec3 &calculator,
+					const vec3 &hit_point,
+					const vec3 &normal,
+					float rand_u, float rand_v,
+					vec3 &sample_pos,
+					vec3 &incident_radiance,
+					vec3 &light_dir,
+					float &dist) const override;
+};
+
+class SphericalDirectionalLight : public Light
+{
+public:
+	const image *env_map;
+	bool use_cosine_sampling;
+	bool is_probe_map;
+
+	SphericalDirectionalLight(const image *img, bool cosine_sample, bool is_probe);
+
+	int get_sample_count() const override;
+
+	void get_sample(simd_vec3 &calculator,
+					const vec3 &hit_point,
+					const vec3 &normal,
 					float rand_u, float rand_v,
 					vec3 &sample_pos,
 					vec3 &incident_radiance,

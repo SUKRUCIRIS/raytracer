@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <iostream>
 #include <vector>
+#include "../third_party/tinyexr/tinyexr.h"
 
 namespace fs = std::filesystem;
 
@@ -165,36 +166,12 @@ enum threading_type
 	MAXIMUM
 };
 
-float get_luminance(float r, float g, float b)
+inline float GetLuminance(float r, float g, float b)
 {
 	return 0.2126f * r + 0.7152f * g + 0.0722f * b;
 }
 
-// Photographic Tone Mapping Operator (Reinhard)
-float tmo_photographic(float L_scaled, float L_white_sq)
-{
-	if (L_white_sq > 0.0f)
-	{
-		// Equation 4: Burn-out
-		return (L_scaled * (1.0f + (L_scaled / L_white_sq))) / (1.0f + L_scaled);
-	}
-	// Equation 3: Simple
-	return L_scaled / (1.0f + L_scaled);
-}
-
-// ACES approximation (Narkowicz)
-float tmo_aces(float x)
-{
-	float a = 2.51f;
-	float b = 0.03f;
-	float c = 2.43f;
-	float d = 0.59f;
-	float e = 0.14f;
-	return std::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0f, 1.0f);
-}
-
-// Filmic approximation (Uncharted 2)
-float tmo_filmic_curve(float x)
+inline float Uncharted2Tonemap(float x)
 {
 	float A = 0.15f;
 	float B = 0.50f;
@@ -205,122 +182,133 @@ float tmo_filmic_curve(float x)
 	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
-float tmo_filmic(float x)
+inline float ACESFilm(float x)
 {
-	float exposure_bias = 2.0f;
-	float curr = tmo_filmic_curve(x * exposure_bias);
-	float white_scale = 1.0f / tmo_filmic_curve(11.2f);
-	return curr * white_scale;
+	float a = 2.51f;
+	float b = 0.03f;
+	float c = 2.43f;
+	float d = 0.59f;
+	float e = 0.14f;
+	return (x * (a * x + b)) / (x * (c * x + d) + e);
 }
 
-void apply_tonemap(const Tonemap &tm, int width, int height, const std::vector<float> &hdr_data, unsigned char *output_png)
+void apply_tonemap(
+	const Tonemap &tm,
+	int width,
+	int height,
+	const std::vector<float> &hdr_data,
+	unsigned char *output_png)
 {
 	int num_pixels = width * height;
-	float key = tm.TMOOptions1;			 // Key value
-	float burn_percent = tm.TMOOptions2; // Burn-out percentage
-	float gamma = tm.Gamma;
-	float saturation = tm.Saturation;
+	const float epsilon = 1e-4f;
 
-	// Photographic TMO Pre-computation
-	float log_avg_luminance = 1.0f;
-	float L_white_sq = 0.0f;
+	double log_sum = 0.0;
+	int valid_pixels = 0;
+	std::vector<float> luminances(num_pixels);
 
-	if (tm.type == Photographic)
+	for (int i = 0; i < num_pixels; ++i)
 	{
-		float sum_log = 0.0f;
-		float delta = 0.000001f;
-		std::vector<float> luminances;
+		float r = std::max(0.0f, hdr_data[i * 3 + 0]);
+		float g = std::max(0.0f, hdr_data[i * 3 + 1]);
+		float b = std::max(0.0f, hdr_data[i * 3 + 2]);
 
-		// Collect luminances for log-avg and potential sorting
-		if (burn_percent > 0.0f)
+		float lum = GetLuminance(r, g, b);
+		luminances[i] = lum;
+
+		if (lum > epsilon)
 		{
-			luminances.reserve(num_pixels);
-		}
-
-		for (int i = 0; i < num_pixels; ++i)
-		{
-			float lum = get_luminance(hdr_data[i * 3], hdr_data[i * 3 + 1], hdr_data[i * 3 + 2]);
-			sum_log += std::log(delta + lum);
-			if (burn_percent > 0.0f)
-			{
-				luminances.push_back(lum);
-			}
-		}
-
-		log_avg_luminance = std::exp(sum_log / num_pixels);
-
-		// Handle Burn-out logic if parameter is non-zero
-		if (burn_percent > 0.0f)
-		{
-			// First scale luminances by key/L_avg
-			float scale_factor = key / log_avg_luminance;
-			for (auto &l : luminances)
-			{
-				l *= scale_factor;
-			}
-
-			// Sort to find percentile
-			std::sort(luminances.begin(), luminances.end());
-
-			// Example: if value is 1, select 99th percentile.
-			float percentile = 100.0f - burn_percent;
-			int idx = (int)((percentile / 100.0f) * (luminances.size() - 1));
-			idx = std::clamp(idx, 0, (int)luminances.size() - 1);
-
-			float L_white = luminances[idx];
-			L_white_sq = L_white * L_white;
+			log_sum += std::log(lum);
+			valid_pixels++;
 		}
 	}
 
-	// Apply Tone Mapping per pixel
+	float L_avg = (valid_pixels > 0) ? std::exp(log_sum / valid_pixels) : 0.18f;
+
+	float key = (tm.TMOOptions1 > 0.0f) ? tm.TMOOptions1 : 0.18f;
+
+	float scale = key / L_avg;
+
+	float L_white_sq = 1.0f;
+
+	if (tm.type == Photographic && tm.TMOOptions2 > 0.0f)
+	{
+		std::vector<float> sorted_lum = luminances;
+		std::sort(sorted_lum.begin(), sorted_lum.end());
+
+		float percent = tm.TMOOptions2;
+		int idx = (int)((num_pixels - 1) * (100.0f - percent) / 100.0f);
+		if (idx < 0)
+			idx = 0;
+		if (idx >= num_pixels)
+			idx = num_pixels - 1;
+
+		float L_white_raw = sorted_lum[idx];
+
+		float L_white = L_white_raw * scale;
+		L_white_sq = L_white * L_white;
+	}
+
+	const float filmic_white_scale = 1.0f / Uncharted2Tonemap(11.2f);
+
+	float gamma_inv = 1.0f / tm.Gamma;
+
 	for (int i = 0; i < num_pixels; ++i)
 	{
-		float r = hdr_data[i * 3];
-		float g = hdr_data[i * 3 + 1];
-		float b = hdr_data[i * 3 + 2];
+		int idx = i * 3;
+		float r_in = std::max(0.0f, hdr_data[idx + 0]);
+		float g_in = std::max(0.0f, hdr_data[idx + 1]);
+		float b_in = std::max(0.0f, hdr_data[idx + 2]);
 
-		// 1. Compute Luminance Yi
-		float Yi = get_luminance(r, g, b);
-		float Yo = 0.0f;
+		float Y_i = luminances[i];
+		float Y_scaled = Y_i * scale;
 
-		// 2. Apply Tone Mapping Algorithm
+		float Y_o = 0.0f;
+
 		if (tm.type == Photographic)
 		{
-			float L_scaled = (key / log_avg_luminance) * Yi;
-			Yo = tmo_photographic(L_scaled, L_white_sq);
+			if (tm.TMOOptions2 > 0.0f)
+			{
+				Y_o = (Y_scaled * (1.0f + (Y_scaled / L_white_sq))) / (1.0f + Y_scaled);
+			}
+			else
+			{
+				Y_o = Y_scaled / (1.0f + Y_scaled);
+			}
 		}
 		else if (tm.type == Filmic)
 		{
-			Yo = tmo_filmic(Yi);
+			Y_o = Uncharted2Tonemap(Y_scaled * 4) * filmic_white_scale;
 		}
 		else if (tm.type == ACES)
 		{
-			Yo = tmo_aces(Yi);
+			Y_o = ACESFilm(Y_scaled);
 		}
 
-		// 3. Reconstruct Color (apply saturation)
-		// Ro = Yo * (R / Yi)^s
-		float ratio_r = (Yi > 1e-6f) ? (r / Yi) : 0.0f;
-		float ratio_g = (Yi > 1e-6f) ? (g / Yi) : 0.0f;
-		float ratio_b = (Yi > 1e-6f) ? (b / Yi) : 0.0f;
+		float r_out, g_out, b_out;
 
-		float Ro = Yo * std::pow(ratio_r, saturation);
-		float Go = Yo * std::pow(ratio_g, saturation);
-		float Bo = Yo * std::pow(ratio_b, saturation);
+		if (Y_i > epsilon)
+		{
+			float s = tm.Saturation;
+			r_out = Y_o * std::pow(r_in / Y_i, s);
+			g_out = Y_o * std::pow(g_in / Y_i, s);
+			b_out = Y_o * std::pow(b_in / Y_i, s);
+		}
+		else
+		{
+			r_out = g_out = b_out = 0.0f;
+		}
 
-		// 4. Gamma Correction
-		Ro = std::clamp(Ro, 0.0f, 1.0f);
-		Go = std::clamp(Go, 0.0f, 1.0f);
-		Bo = std::clamp(Bo, 0.0f, 1.0f);
+		r_out = std::min(1.0f, std::max(0.0f, r_out));
+		g_out = std::min(1.0f, std::max(0.0f, g_out));
+		b_out = std::min(1.0f, std::max(0.0f, b_out));
 
-		float inv_gamma = 1.0f / gamma;
-		unsigned char Rf = (unsigned char)(std::pow(Ro, inv_gamma) * 255.0f);
-		unsigned char Gf = (unsigned char)(std::pow(Go, inv_gamma) * 255.0f);
-		unsigned char Bf = (unsigned char)(std::pow(Bo, inv_gamma) * 255.0f);
+		r_out = std::pow(r_out, gamma_inv);
+		g_out = std::pow(g_out, gamma_inv);
+		b_out = std::pow(b_out, gamma_inv);
 
-		output_png[i * 3 + 0] = Rf;
-		output_png[i * 3 + 1] = Gf;
-		output_png[i * 3 + 2] = Bf;
+		output_png[idx + 0] = (unsigned char)(r_out * 255.0f + 0.5f);
+		output_png[idx + 1] = (unsigned char)(g_out * 255.0f + 0.5f);
+		output_png[idx + 2] = (unsigned char)(b_out * 255.0f + 0.5f);
 	}
 }
 
@@ -375,12 +363,28 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 	float maxdepth = p.get_maxrecursiondepth();
 	vec3 backgroundcolor = p.get_backgroundcolor();
 	vec3 ambientlight = p.get_ambientlight();
-	auto point_lights = p.get_pointlights(calculator, mat_calc, transformations);
+	auto lights = p.get_lights(calculator, mat_calc, transformations, images);
+
+	bool is_probe = false;
+	for (Light *light : *lights)
+	{
+		SphericalDirectionalLight *env_light = dynamic_cast<SphericalDirectionalLight *>(light);
+
+		if (env_light)
+		{
+			if (env_light->env_map)
+			{
+				bg = new texture(const_cast<image *>(env_light->env_map), -1, replace_background, bilinear);
+				is_probe = env_light->is_probe_map;
+			}
+			break;
+		}
+	}
 
 	stbi_flip_vertically_on_write(1);
 
 	auto rt = new ray_tracer(shapes, intersectionepsilon, shadowrayepsilon, ambientlight,
-							 point_lights, backgroundcolor, maxdepth);
+							 lights, backgroundcolor, maxdepth);
 
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -393,7 +397,6 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 
 		int total_pixels = camera.resx * camera.resy;
 
-		// Use a float vector to store high-precision HDR radiance
 		std::vector<float> hdr_output(total_pixels * 3, 0.0f);
 
 		std::atomic<int> next_scanline(0);
@@ -426,8 +429,7 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 				for (const auto &sample : samples)
 				{
 					float temp_color[3];
-					// Using the new trace signature that accepts float*
-					rt->trace(calculatorp, calculator_m, sample.position, sample.direction, sample.time, true, camera.is_hdr, bg, pixelu, pixelv, temp_color);
+					rt->trace(calculatorp, calculator_m, sample.position, sample.direction, sample.time, true, camera.is_hdr, bg, is_probe, pixelu, pixelv, temp_color);
 
 					r_acc += temp_color[0];
 					g_acc += temp_color[1];
@@ -439,7 +441,6 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 				g_acc /= num_samples;
 				b_acc /= num_samples;
 
-				// Store raw radiance in the float buffer
 				int pixel_index = index * 3;
 				hdr_output[pixel_index + 0] = r_acc;
 				hdr_output[pixel_index + 1] = g_acc;
@@ -521,15 +522,10 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 		duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 		my_printf("%s rendering done: %d ms\n", camera.output.c_str(), duration.count());
 
-		// --- Post-Processing: Save Files ---
-
-		// 1. Save EXR if requested
 		if (camera.is_hdr || camera.output.ends_with(".exr"))
 		{
-			/*todoooo
 			my_printf("%s write EXR started\n", camera.output.c_str());
 			const char *err = nullptr;
-			// Save as EXR (3 channels, float precision)
 			int ret = SaveEXR(hdr_output.data(), camera.resx, camera.resy, 3, 0, ("outputs/" + camera.output).c_str(), &err);
 			if (ret != TINYEXR_SUCCESS)
 			{
@@ -539,11 +535,9 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 					FreeEXRErrorMessage(err);
 				}
 			}
-			*/
 		}
 		else
 		{
-			// If no tonemap and not EXR, save as LDR PNG (clamp manually)
 			if (camera.Tonemaps.empty())
 			{
 				std::vector<unsigned char> ldr_out(total_pixels * 3);
@@ -555,7 +549,6 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 			}
 		}
 
-		// 2. Process and Save Tone Mapped images
 		if (!camera.Tonemaps.empty())
 		{
 			std::vector<unsigned char> tm_output(total_pixels * 3);
@@ -564,7 +557,6 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 			{
 				apply_tonemap(tm, camera.resx, camera.resy, hdr_output, tm_output.data());
 
-				// Generate filename suffix: "image.exr" + "_phot.png" -> "image_phot.png"
 				std::string base = camera.output;
 				size_t dot_pos = base.find_last_of('.');
 				if (dot_pos != std::string::npos)
@@ -601,7 +593,7 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 	delete shapes;
 	delete vertices;
 	delete materials;
-	delete point_lights;
+	delete lights;
 }
 
 int main(int argc, char **argv)
