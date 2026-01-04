@@ -349,13 +349,10 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calcul
 
 				if (val.HasMember("TMOOptions"))
 					sscanf(val["TMOOptions"].GetString(), "%f %f", &tm.TMOOptions1, &tm.TMOOptions2);
-				tm.TMOOptions1 += 0.075f;
 				if (val.HasMember("Saturation"))
 					sscanf(val["Saturation"].GetString(), "%f", &tm.Saturation);
-				tm.Saturation += 0.5f;
 				if (val.HasMember("Gamma"))
 					sscanf(val["Gamma"].GetString(), "%f", &tm.Gamma);
-				tm.Gamma -= 0.7f;
 				if (val.HasMember("Extension"))
 					tm.Extension = val["Extension"].GetString();
 
