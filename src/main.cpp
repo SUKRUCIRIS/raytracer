@@ -166,30 +166,102 @@ enum threading_type
 	MAXIMUM
 };
 
-inline float GetLuminance(float r, float g, float b)
+static float clamp01(float v)
+{
+	return (v < 0.0f) ? 0.0f : (v > 1.0f) ? 1.0f
+										  : v;
+}
+
+static float get_luminance(float r, float g, float b)
 {
 	return 0.2126f * r + 0.7152f * g + 0.0722f * b;
 }
 
-inline float Uncharted2Tonemap(float x)
+static float compute_log_average_luminance(const std::vector<float> &luminances)
 {
-	float A = 0.15f;
-	float B = 0.50f;
-	float C = 0.10f;
-	float D = 0.20f;
-	float E = 0.02f;
-	float F = 0.30f;
-	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+	if (luminances.empty())
+		return 1.0f;
+
+	const float delta = 1e-4f;
+	double sumLog = 0.0;
+
+	for (float lum : luminances)
+	{
+		float val = (lum < 0.0f) ? 0.0f : lum;
+		sumLog += std::log(delta + val);
+	}
+
+	return (float)std::exp(sumLog / (double)luminances.size());
 }
 
-inline float ACESFilm(float x)
+static float compute_white_point_exposed(const std::vector<float> &Yin, float exposure, float burnPct)
 {
-	float a = 2.51f;
-	float b = 0.03f;
-	float c = 2.43f;
-	float d = 0.59f;
-	float e = 0.14f;
-	return (x * (a * x + b)) / (x * (c * x + d) + e);
+	if (Yin.empty())
+		return 1e9f;
+	if (burnPct <= 1e-6f)
+		return 1e9f;
+
+	std::vector<float> L = Yin;
+	for (float &v : L)
+	{
+		v = std::max(0.0f, v) * exposure;
+	}
+
+	float percentile = (100.0f - burnPct) / 100.0f;
+	int k = (int)std::floor(percentile * (L.size() - 1));
+	k = std::max(0, std::min((int)L.size() - 1, k));
+
+	std::nth_element(L.begin(), L.begin() + k, L.end());
+	return std::max(L[k], 1e-6f);
+}
+
+static void reconstruct_color(float rIn, float gIn, float bIn, float Yin, float Yout, float saturation, float &rOut, float &gOut, float &bOut)
+{
+	if (Yin < 1e-6f)
+	{
+		rOut = 0.0f;
+		gOut = 0.0f;
+		bOut = 0.0f;
+		return;
+	}
+
+	float ratioR = rIn / Yin;
+	float ratioG = gIn / Yin;
+	float ratioB = bIn / Yin;
+
+	if (std::abs(saturation - 1.0f) > 1e-4f)
+	{
+		ratioR = std::pow(std::max(0.0f, ratioR), saturation);
+		ratioG = std::pow(std::max(0.0f, ratioG), saturation);
+		ratioB = std::pow(std::max(0.0f, ratioB), saturation);
+	}
+
+	rOut = Yout * ratioR;
+	gOut = Yout * ratioG;
+	bOut = Yout * ratioB;
+}
+
+static float aces_map(float x)
+{
+	const float A = 2.51f;
+	const float B = 0.03f;
+	const float C = 2.43f;
+	const float D = 0.59f;
+	const float E = 0.14f;
+	return (x * (A * x + B)) / (x * (C * x + D) + E);
+}
+
+static float filmic_map(float x)
+{
+	const float A = 0.22f;
+	const float B = 0.30f;
+	const float C = 0.10f;
+	const float D = 0.20f;
+	const float E = 0.01f;
+	const float F = 0.30f;
+	float num = x * (A * x + C * B) + D * E;
+	float den = x * (A * x + B) + D * F;
+	return (num / den) - (E / F);
 }
 
 void apply_tonemap(
@@ -200,115 +272,75 @@ void apply_tonemap(
 	unsigned char *output_png)
 {
 	int num_pixels = width * height;
-	const float epsilon = 1e-4f;
-
-	double log_sum = 0.0;
-	int valid_pixels = 0;
-	std::vector<float> luminances(num_pixels);
+	std::vector<float> Yin(num_pixels);
 
 	for (int i = 0; i < num_pixels; ++i)
 	{
-		float r = std::max(0.0f, hdr_data[i * 3 + 0]);
-		float g = std::max(0.0f, hdr_data[i * 3 + 1]);
-		float b = std::max(0.0f, hdr_data[i * 3 + 2]);
-
-		float lum = GetLuminance(r, g, b);
-		luminances[i] = lum;
-
-		if (lum > epsilon)
-		{
-			log_sum += std::log(lum);
-			valid_pixels++;
-		}
+		float r = hdr_data[i * 3 + 0];
+		float g = hdr_data[i * 3 + 1];
+		float b = hdr_data[i * 3 + 2];
+		Yin[i] = get_luminance(r, g, b);
 	}
 
-	float L_avg = (valid_pixels > 0) ? std::exp(log_sum / valid_pixels) : 0.18f;
+	float Yavg = compute_log_average_luminance(Yin);
+	float key = tm.TMOOptions1;
+	float exposure = (Yavg > 1e-6f) ? (key / Yavg) : 1.0f;
 
-	float key = (tm.TMOOptions1 > 0.0f) ? tm.TMOOptions1 : 0.18f;
+	float L_white = compute_white_point_exposed(Yin, exposure, tm.TMOOptions2);
+	float L_white_sq = L_white * L_white;
 
-	float scale = key / L_avg;
+	float saturation = tm.Saturation;
+	float gamma = (tm.Gamma > 1e-6f) ? tm.Gamma : 2.2f;
+	float inv_gamma = 1.0f / gamma;
 
-	float L_white_sq = 1.0f;
+	float denom_aces = 1.0f;
+	float denom_filmic = 1.0f;
 
-	if (tm.type == Photographic && tm.TMOOptions2 > 0.0f)
+	if (tm.type == ACES)
 	{
-		std::vector<float> sorted_lum = luminances;
-		std::sort(sorted_lum.begin(), sorted_lum.end());
-
-		float percent = tm.TMOOptions2;
-		int idx = (int)((num_pixels - 1) * (100.0f - percent) / 100.0f);
-		if (idx < 0)
-			idx = 0;
-		if (idx >= num_pixels)
-			idx = num_pixels - 1;
-
-		float L_white_raw = sorted_lum[idx];
-
-		float L_white = L_white_raw * scale;
-		L_white_sq = L_white * L_white;
+		denom_aces = std::max(aces_map(L_white), 1e-6f);
 	}
-
-	const float filmic_white_scale = 1.0f / Uncharted2Tonemap(11.2f);
-
-	float gamma_inv = 1.0f / tm.Gamma;
+	else if (tm.type == Filmic)
+	{
+		denom_filmic = std::max(filmic_map(L_white), 1e-6f);
+	}
 
 	for (int i = 0; i < num_pixels; ++i)
 	{
 		int idx = i * 3;
-		float r_in = std::max(0.0f, hdr_data[idx + 0]);
-		float g_in = std::max(0.0f, hdr_data[idx + 1]);
-		float b_in = std::max(0.0f, hdr_data[idx + 2]);
+		float r_in = hdr_data[idx + 0];
+		float g_in = hdr_data[idx + 1];
+		float b_in = hdr_data[idx + 2];
+		float Y_i = Yin[i];
 
-		float Y_i = luminances[i];
-		float Y_scaled = Y_i * scale;
-
-		float Y_o = 0.0f;
+		float L = std::max(0.0f, Y_i) * exposure;
+		float Y_out = 0.0f;
 
 		if (tm.type == Photographic)
 		{
-			if (tm.TMOOptions2 > 0.0f)
-			{
-				Y_o = (Y_scaled * (1.0f + (Y_scaled / L_white_sq))) / (1.0f + Y_scaled);
-			}
-			else
-			{
-				Y_o = Y_scaled / (1.0f + Y_scaled);
-			}
-		}
-		else if (tm.type == Filmic)
-		{
-			Y_o = Uncharted2Tonemap(Y_scaled * 4) * filmic_white_scale;
+			Y_out = (L * (1.0f + (L / L_white_sq))) / (1.0f + L);
 		}
 		else if (tm.type == ACES)
 		{
-			Y_o = ACESFilm(Y_scaled);
+			Y_out = aces_map(L) / denom_aces;
 		}
-
-		float r_out, g_out, b_out;
-
-		if (Y_i > epsilon)
+		else if (tm.type == Filmic)
 		{
-			float s = tm.Saturation;
-			r_out = Y_o * std::pow(r_in / Y_i, s);
-			g_out = Y_o * std::pow(g_in / Y_i, s);
-			b_out = Y_o * std::pow(b_in / Y_i, s);
-		}
-		else
-		{
-			r_out = g_out = b_out = 0.0f;
+			Y_out = filmic_map(L) / denom_filmic;
 		}
 
-		r_out = std::min(1.0f, std::max(0.0f, r_out));
-		g_out = std::min(1.0f, std::max(0.0f, g_out));
-		b_out = std::min(1.0f, std::max(0.0f, b_out));
+		Y_out = clamp01(Y_out);
 
-		r_out = std::pow(r_out, gamma_inv);
-		g_out = std::pow(g_out, gamma_inv);
-		b_out = std::pow(b_out, gamma_inv);
+		float r_final, g_final, b_final;
+		reconstruct_color(r_in, g_in, b_in, Y_i, Y_out, saturation, r_final, g_final, b_final);
 
-		output_png[idx + 0] = (unsigned char)(r_out * 255.0f + 0.5f);
-		output_png[idx + 1] = (unsigned char)(g_out * 255.0f + 0.5f);
-		output_png[idx + 2] = (unsigned char)(b_out * 255.0f + 0.5f);
+		r_final = std::pow(clamp01(r_final), inv_gamma);
+		g_final = std::pow(clamp01(g_final), inv_gamma);
+		b_final = std::pow(clamp01(b_final), inv_gamma);
+
+		output_png[idx + 0] = (unsigned char)std::lround(255.0f * r_final);
+		output_png[idx + 1] = (unsigned char)std::lround(255.0f * g_final);
+		output_png[idx + 2] = (unsigned char)std::lround(255.0f * b_final);
 	}
 }
 

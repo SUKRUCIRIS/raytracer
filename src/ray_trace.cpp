@@ -251,6 +251,7 @@ void ray_tracer::calculate_reflected_dir(simd_vec3 &calculator, const vec3 &N, c
 		add_roughness(calculator, R, roughness);
 	}
 	calculator.normalize(R, R);
+	R.store();
 }
 
 bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, const vec3 &I,
@@ -278,6 +279,7 @@ bool ray_tracer::calculate_refracted_dir(simd_vec3 &calculator, const vec3 &N, c
 	}
 
 	calculator.normalize(T, T);
+	T.store();
 
 	return true;
 }
