@@ -6,13 +6,14 @@ PointLight::PointLight(vec3 pos, vec3 inten) : position(pos), intensity(inten) {
 int PointLight::get_sample_count() const { return 1; }
 
 void PointLight::get_sample(simd_vec3 &calculator,
+							simd_mat4 &calculator_m,
 							const vec3 &hit_point,
 							const vec3 &normal,
 							float rand_u, float rand_v,
 							vec3 &sample_pos,
 							vec3 &incident_radiance,
 							vec3 &light_dir,
-							float &dist) const
+							float &dist)
 {
 	vec3 dir_unnormalized;
 	calculator.subs(position, hit_point, dir_unnormalized);
@@ -57,13 +58,14 @@ AreaLight::AreaLight(simd_vec3 &calculator, vec3 pos, vec3 norm, float sz, vec3 
 int AreaLight::get_sample_count() const { return samples; }
 
 void AreaLight::get_sample(simd_vec3 &calculator,
+						   simd_mat4 &calculator_m,
 						   const vec3 &hit_point,
 						   const vec3 &normal_at_hit,
 						   float rand_u, float rand_v,
 						   vec3 &sample_pos,
 						   vec3 &incident_radiance,
 						   vec3 &light_dir,
-						   float &dist) const
+						   float &dist)
 {
 	float u_offset_val = (rand_u - 0.5f) * size;
 	float v_offset_val = (rand_v - 0.5f) * size;
@@ -116,13 +118,14 @@ DirectionalLight::DirectionalLight(simd_vec3 &calculator, vec3 dir, vec3 rad)
 int DirectionalLight::get_sample_count() const { return 1; }
 
 void DirectionalLight::get_sample(simd_vec3 &calculator,
+								  simd_mat4 &calculator_m,
 								  const vec3 &hit_point,
 								  const vec3 &normal,
 								  float rand_u, float rand_v,
 								  vec3 &sample_pos,
 								  vec3 &incident_radiance,
 								  vec3 &light_dir,
-								  float &dist) const
+								  float &dist)
 {
 	dist = std::numeric_limits<float>::max();
 
@@ -153,13 +156,14 @@ SpotLight::SpotLight(simd_vec3 &calculator, vec3 pos, vec3 dir, vec3 inten, floa
 int SpotLight::get_sample_count() const { return 1; }
 
 void SpotLight::get_sample(simd_vec3 &calculator,
+						   simd_mat4 &calculator_m,
 						   const vec3 &hit_point,
 						   const vec3 &normal,
 						   float rand_u, float rand_v,
 						   vec3 &sample_pos,
 						   vec3 &incident_radiance,
 						   vec3 &light_dir,
-						   float &dist) const
+						   float &dist)
 {
 	vec3 dir_unnormalized;
 	calculator.subs(position, hit_point, dir_unnormalized);
@@ -213,13 +217,14 @@ SphericalDirectionalLight::SphericalDirectionalLight(const image *img, bool cosi
 int SphericalDirectionalLight::get_sample_count() const { return 1; }
 
 void SphericalDirectionalLight::get_sample(simd_vec3 &calculator,
+										   simd_mat4 &calculator_m,
 										   const vec3 &hit_point,
 										   const vec3 &normal,
 										   float rand_u, float rand_v,
 										   vec3 &sample_pos,
 										   vec3 &incident_radiance,
 										   vec3 &light_dir,
-										   float &dist) const
+										   float &dist)
 {
 	dist = std::numeric_limits<float>::max();
 
@@ -307,5 +312,75 @@ void SphericalDirectionalLight::get_sample(simd_vec3 &calculator,
 		pdf = 1e-6f;
 	calculator.mult_scalar(incident_radiance, 1.0f / pdf, incident_radiance);
 	light_dir.store();
+	incident_radiance.store();
+}
+
+TriangleLight::TriangleLight(simd_vec3 &calculator, simd_mat4 &calculator_m, triangle *t, int id, vec3 rad)
+	: tri(t), mesh_id(id), radiance(rad)
+{
+	vec3 v0, v1, v2;
+	tri->getWorldVertices(calculator, calculator_m, mesh_id, v0, v1, v2);
+
+	vec3 e1, e2;
+	calculator.subs(v1, v0, e1);
+	calculator.subs(v2, v0, e2);
+	vec3 n;
+	calculator.cross(e1, e2, n);
+	float len_sq;
+	calculator.length_squared(n, len_sq);
+	float len = std::sqrt(len_sq);
+
+	area = 0.5f * len;
+	calculator.normalize(n, normal);
+	normal.store();
+}
+
+int TriangleLight::get_sample_count() const { return 1; }
+
+void TriangleLight::get_sample(simd_vec3 &calculator,
+							   simd_mat4 &calculator_m,
+							   const vec3 &hit_point,
+							   const vec3 &normal_at_hit,
+							   float rand_u, float rand_v,
+							   vec3 &sample_pos,
+							   vec3 &incident_radiance,
+							   vec3 &light_dir,
+							   float &dist)
+{
+	vec3 v0, v1, v2;
+	tri->getWorldVertices(calculator, calculator_m, mesh_id, v0, v1, v2);
+
+	float sqrt_r1 = std::sqrt(rand_u);
+	float u = 1.0f - sqrt_r1;
+	float v = rand_v * sqrt_r1;
+	float w = 1.0f - u - v;
+
+	vec3 p0_w, p1_u, p2_v;
+	calculator.mult_scalar(v0, w, p0_w);
+	calculator.mult_scalar(v1, u, p1_u);
+	calculator.mult_scalar(v2, v, p2_v);
+
+	calculator.add(p0_w, p1_u, sample_pos);
+	calculator.add(sample_pos, p2_v, sample_pos);
+
+	vec3 dir_unnormalized;
+	calculator.subs(sample_pos, hit_point, dir_unnormalized);
+
+	float d2;
+	calculator.dot(dir_unnormalized, dir_unnormalized, d2);
+	dist = std::sqrt(d2);
+
+	calculator.mult_scalar(dir_unnormalized, 1.0f / dist, light_dir);
+	light_dir.store();
+
+	vec3 neg_light_dir;
+	calculator.mult_scalar(light_dir, -1.0f, neg_light_dir);
+	float cos_theta_light;
+	calculator.dot(normal, neg_light_dir, cos_theta_light);
+
+	cos_theta_light = std::abs(cos_theta_light);
+
+	float factor = (area * cos_theta_light) / d2;
+	calculator.mult_scalar(radiance, factor, incident_radiance);
 	incident_radiance.store();
 }

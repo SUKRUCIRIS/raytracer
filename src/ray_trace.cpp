@@ -38,6 +38,72 @@ void get_probe_uv(const vec3 &dir, float &u, float &v)
 	v = (-r * dy + 1.0f) * 0.5f;
 }
 
+void ray_tracer::get_orthonormal_basis(const vec3 &normal, vec3 &u, vec3 &v, vec3 &w) const
+{
+	w = normal;
+	vec3 helper;
+	if (std::abs(w.get_x()) > 0.9f)
+		helper.load(0, 1, 0);
+	else
+		helper.load(1, 0, 0);
+
+	simd_vec3 calc;
+	calc.cross(helper, w, u);
+	calc.normalize(u, u);
+	calc.cross(w, u, v);
+	calc.normalize(v, v);
+}
+
+void ray_tracer::sample_cosine_hemisphere(float r1, float r2, const vec3 &normal, vec3 &dir, float &pdf) const
+{
+	float phi = 2.0f * 3.14159265359f * r1;
+	float sin_theta = std::sqrt(r2);
+	float cos_theta = std::sqrt(1.0f - r2);
+
+	float x = sin_theta * std::cos(phi);
+	float y = sin_theta * std::sin(phi);
+	float z = cos_theta;
+
+	vec3 u, v, w;
+	get_orthonormal_basis(normal, u, v, w);
+
+	simd_vec3 calc;
+	vec3 term1, term2, term3;
+	calc.mult_scalar(u, x, term1);
+	calc.mult_scalar(v, y, term2);
+	calc.mult_scalar(w, z, term3);
+	calc.add(term1, term2, dir);
+	calc.add(dir, term3, dir);
+	calc.normalize(dir, dir);
+
+	pdf = cos_theta / 3.14159265359f;
+}
+
+void ray_tracer::sample_uniform_hemisphere(float r1, float r2, const vec3 &normal, vec3 &dir, float &pdf) const
+{
+	float phi = 2.0f * 3.14159265359f * r1;
+	float sin_theta = std::sqrt(1.0f - r2 * r2);
+	float cos_theta = r2;
+
+	float x = sin_theta * std::cos(phi);
+	float y = sin_theta * std::sin(phi);
+	float z = cos_theta;
+
+	vec3 u, v, w;
+	get_orthonormal_basis(normal, u, v, w);
+
+	simd_vec3 calc;
+	vec3 term1, term2, term3;
+	calc.mult_scalar(u, x, term1);
+	calc.mult_scalar(v, y, term2);
+	calc.mult_scalar(w, z, term3);
+	calc.add(term1, term2, dir);
+	calc.add(dir, term3, dir);
+	calc.normalize(dir, dir);
+
+	pdf = 1.0f / (2.0f * 3.14159265359f);
+}
+
 void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
 								 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
 								 const shape *min_shape, const float &raytime, int id, bool is_hdr, vec3 &color) const
@@ -104,7 +170,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 			vec3 sample_pos, incident_radiance, light_dir;
 			float dist;
 
-			light->get_sample(calculator, hit_point, normal, r1, r2,
+			light->get_sample(calculator, calculator_m, hit_point, normal, r1, r2,
 							  sample_pos, incident_radiance, light_dir, dist);
 
 			if (incident_radiance.get_x() == 0 && incident_radiance.get_y() == 0 && incident_radiance.get_z() == 0)
@@ -788,14 +854,328 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 	}
 }
 
+void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
+							vec3 &color, const float &raytime, const bool culling, texture *bg, bool is_probe, int depth, const RenderSettings &settings) const
+{
+	color.load(0, 0, 0);
+
+	float t;
+	float min_t = FLT_MAX;
+	shape *min_shape = 0;
+	int min_id = 0;
+	shape *hit_shape = 0;
+
+	if (bvhx->intersect(calculator, calculator_m, ray_origin, ray_dir, raytime, min_t, &hit_shape, min_id, culling, intersectionepsilon))
+	{
+		min_shape = hit_shape;
+	}
+
+	if (!min_shape)
+	{
+		if (bg && bg->im)
+		{
+			float u, v;
+			if (is_probe)
+				get_probe_uv(ray_dir, u, v);
+			else
+				get_latlong_uv(ray_dir, u, v);
+			bg->sample(u, v, vec3(0), color);
+		}
+		else
+		{
+			color = backgroundcolor;
+		}
+		return;
+	}
+
+	material *mat = min_shape->getMaterial(min_id);
+
+	vec3 emission = min_shape->getEmission(min_id);
+	calculator.add(color, emission, color);
+
+	vec3 hit_point;
+	calculator.mult_scalar(ray_dir, min_t, hit_point);
+	calculator.add(ray_origin, hit_point, hit_point);
+
+	vec3 normal;
+	min_shape->get_normal(calculator, calculator_m, hit_point, min_id, normal);
+	auto textures = min_shape->getTextures(min_id);
+	apply_normal_map(calculator, calculator_m, hit_point, textures, min_shape, min_id, normal);
+	apply_bump_map(calculator, calculator_m, hit_point, textures, min_shape, min_id, normal);
+
+	if (mat->mt == Mirror || mat->mt == Dielectric || mat->mt == Conductor)
+	{
+		vec3 recursive_color;
+		if (depth < max_depth)
+		{
+			if (mat->mt == Mirror)
+			{
+				vec3 R;
+				calculate_reflected_dir(calculator, normal, ray_dir, R, mat->roughness);
+				vec3 offset;
+				calculator.mult_scalar(normal, shadowrayepsilon, offset);
+				vec3 next_o;
+				calculator.add(hit_point, offset, next_o);
+				path_trace(calculator, calculator_m, next_o, R, recursive_color, raytime, culling, bg, is_probe, depth + 1, settings);
+				calculator.mult(recursive_color, mat->MirrorReflectance, color);
+			}
+			else if (mat->mt == Conductor)
+			{
+				vec3 R;
+				calculate_reflected_dir(calculator, normal, ray_dir, R, mat->roughness);
+
+				float cosTheta;
+				calculator.dot(ray_dir, normal, cosTheta);
+				cosTheta = fabsf(cosTheta);
+
+				float n = mat->RefractionIndex;
+				float k = mat->AbsorptionIndex;
+
+				float c = cosTheta;
+				float c2 = c * c;
+				float s2 = 1.0f - c2;
+
+				float n2 = n * n;
+				float k2 = k * k;
+				float n2_k2 = n2 - k2;
+				float n2k2_4 = 4.0f * n2 * k2;
+
+				float a2_b2 = sqrtf((n2_k2 - s2) * (n2_k2 - s2) + n2k2_4);
+				float a2 = 0.5f * (a2_b2 + n2_k2 - s2);
+				float a = sqrtf(a2);
+				float b2 = a2_b2 - a2;
+				float b = sqrtf(b2);
+
+				float Rs_num = a2_b2 + c2 - (2.0f * a * c);
+				float Rs_den = a2_b2 + c2 + (2.0f * a * c);
+				float Rs = (Rs_den == 0.0f) ? 1.0f : Rs_num / Rs_den;
+
+				float ac = a * c;
+				float bc = b * c;
+				float Rp_num_term1 = ac - s2;
+				float Rp_den_term1 = ac + s2;
+				float Rp_num = (Rp_num_term1 * Rp_num_term1) + (bc * bc);
+				float Rp_den = (Rp_den_term1 * Rp_den_term1) + (bc * bc);
+				float Rp = (Rp_den == 0.0f) ? 1.0f : Rs * (Rp_num / Rp_den);
+
+				float F_scalar = 0.5f * (Rs + Rp);
+				F_scalar = std::clamp(F_scalar, 0.0f, 1.0f);
+
+				vec3 F_vec(F_scalar, F_scalar, F_scalar);
+				vec3 F;
+				calculator.mult(F_vec, mat->MirrorReflectance, F);
+
+				vec3 offset;
+				calculator.mult_scalar(normal, shadowrayepsilon, offset);
+				vec3 next_o;
+				calculator.add(hit_point, offset, next_o);
+
+				path_trace(calculator, calculator_m, next_o, R, recursive_color, raytime, culling, bg, is_probe, depth + 1, settings);
+				calculator.mult(recursive_color, F, color);
+			}
+			else if (mat->mt == Dielectric)
+			{
+				float n1 = 1.0f;
+				float n2 = mat->RefractionIndex;
+				float cosTheta;
+				calculator.dot(ray_dir, normal, cosTheta);
+
+				bool entering = cosTheta < 0.0f;
+				vec3 real_normal = normal;
+				if (!entering)
+				{
+					std::swap(n1, n2);
+					calculator.mult_scalar(normal, -1.0f, real_normal);
+					cosTheta = -cosTheta;
+				}
+				else
+				{
+					cosTheta = -cosTheta;
+				}
+
+				float r0 = (n1 - n2) / (n1 + n2);
+				r0 = r0 * r0;
+				float F = r0 + (1.0f - r0) * std::pow(1.0f - cosTheta, 5.0f);
+
+				vec3 R;
+				calculate_reflected_dir(calculator, real_normal, ray_dir, R, mat->roughness);
+				vec3 offset;
+				calculator.mult_scalar(real_normal, shadowrayepsilon, offset);
+				vec3 refl_orig;
+				calculator.add(hit_point, offset, refl_orig);
+
+				vec3 refl_col;
+				path_trace(calculator, calculator_m, refl_orig, R, refl_col, raytime, culling, bg, is_probe, depth + 1, settings);
+
+				vec3 T;
+				if (calculate_refracted_dir(calculator, real_normal, ray_dir, n1, n2, T, mat->roughness))
+				{
+					vec3 refr_col;
+					vec3 neg_offset;
+					calculator.mult_scalar(offset, -1.0f, neg_offset);
+					vec3 refr_orig;
+					calculator.add(hit_point, neg_offset, refr_orig);
+
+					path_trace(calculator, calculator_m, refr_orig, T, refr_col, raytime, culling, bg, is_probe, depth + 1, settings);
+
+					if (!entering)
+					{
+						vec3 absorb;
+						calculator.mult_scalar(mat->AbsorptionCoefficient, -min_t, absorb);
+						calculator.exp(absorb, absorb);
+						calculator.mult(refr_col, absorb, refr_col);
+					}
+
+					vec3 term1, term2;
+					calculator.mult_scalar(refl_col, F, term1);
+					calculator.mult_scalar(refr_col, 1.0f - F, term2);
+					calculator.add(term1, term2, color);
+				}
+				else
+				{
+					color = refl_col;
+				}
+				calculator.mult(color, mat->MirrorReflectance, color);
+			}
+		}
+		return;
+	}
+
+	float rr_prob = 1.0f;
+	if (settings.russianRoulette && depth >= settings.minRecursionDepth)
+	{
+		float max_refl = std::max({mat->DiffuseReflectance.get_x(), mat->DiffuseReflectance.get_y(), mat->DiffuseReflectance.get_z()});
+		rr_prob = std::min(max_refl, 0.99f);
+		if (get_random_float() > rr_prob)
+			return;
+	}
+
+	if (settings.nextEventEstimation)
+	{
+		for (Light *light : *lights)
+		{
+			int samples = light->get_sample_count();
+			for (int s = 0; s < samples; ++s)
+			{
+				vec3 L_i, light_dir, light_pos;
+				float dist;
+				light->get_sample(calculator, calculator_m, hit_point, normal, get_random_float(), get_random_float(), light_pos, L_i, light_dir, dist);
+
+				vec3 shadow_orig;
+				calculator.mult_scalar(light_dir, shadowrayepsilon, shadow_orig);
+				calculator.add(hit_point, shadow_orig, shadow_orig);
+
+				float t_shadow;
+				shape *sh_hit = 0;
+				int sh_id;
+				bool in_shadow = false;
+				if (bvhx->intersect(calculator, calculator_m, shadow_orig, light_dir, raytime, t_shadow, &sh_hit, sh_id, false, shadowrayepsilon, true, dist))
+				{
+					if (t_shadow < dist - shadowrayepsilon)
+						in_shadow = true;
+				}
+
+				if (!in_shadow)
+				{
+					float ndotl;
+					calculator.dot(normal, light_dir, ndotl);
+					ndotl = std::max(ndotl, 0.0f);
+					if (ndotl > 0.0f)
+					{
+						vec3 f_r;
+						calculator.mult_scalar(mat->DiffuseReflectance, 1.0f / 3.14159265359f, f_r);
+						vec3 contrib;
+						calculator.mult(f_r, L_i, contrib);
+						calculator.mult_scalar(contrib, ndotl, contrib);
+						calculator.add(color, contrib, color);
+					}
+				}
+			}
+		}
+	}
+
+	if (depth < max_depth)
+	{
+		vec3 wi;
+		float pdf;
+
+		if (settings.importanceSampling)
+			sample_cosine_hemisphere(get_random_float(), get_random_float(), normal, wi, pdf);
+		else
+			sample_uniform_hemisphere(get_random_float(), get_random_float(), normal, wi, pdf);
+
+		int split = (depth == 0 && settings.splittingFactor > 1) ? settings.splittingFactor : 1;
+		vec3 indirect_accum(0, 0, 0);
+
+		for (int i = 0; i < split; ++i)
+		{
+			if (split > 1)
+			{
+				if (settings.importanceSampling)
+					sample_cosine_hemisphere(get_random_float(), get_random_float(), normal, wi, pdf);
+				else
+					sample_uniform_hemisphere(get_random_float(), get_random_float(), normal, wi, pdf);
+			}
+
+			vec3 bounce_color;
+			vec3 offset;
+			calculator.mult_scalar(normal, shadowrayepsilon, offset);
+			vec3 next_o;
+			calculator.add(hit_point, offset, next_o);
+
+			path_trace(calculator, calculator_m, next_o, wi, bounce_color, raytime, culling, bg, is_probe, depth + 1, settings);
+
+			float ndotl;
+			calculator.dot(normal, wi, ndotl);
+			ndotl = std::max(ndotl, 0.0f);
+			if (pdf > 1e-6f)
+			{
+				vec3 f_r;
+				calculator.mult_scalar(mat->DiffuseReflectance, 1.0f / 3.14159265359f, f_r);
+				vec3 val;
+				calculator.mult(bounce_color, f_r, val);
+				calculator.mult_scalar(val, ndotl / pdf, val);
+				calculator.add(indirect_accum, val, indirect_accum);
+			}
+		}
+
+		calculator.mult_scalar(indirect_accum, 1.0f / split, indirect_accum);
+
+		if (rr_prob < 1.0f && rr_prob > 0.0f)
+			calculator.mult_scalar(indirect_accum, 1.0f / rr_prob, indirect_accum);
+
+		calculator.add(color, indirect_accum, color);
+	}
+}
+
 void ray_tracer::trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
-					   const float &raytime, const bool culling, bool is_hdr, texture *bg, bool is_probe, float pixelu, float pixelv, float *output) const
+					   const float &raytime, const bool culling, bool is_hdr, texture *bg, bool is_probe, float pixelu,
+					   float pixelv, float *output, const RenderSettings &settings) const
 {
 	vec3 color;
 
-	trace_rec(calculator, calculator_m, ray_origin, ray_dir, color, raytime, culling, is_hdr, bg, is_probe, pixelu, pixelv, 0);
+	if (settings.isPathTracing)
+	{
+		path_trace(calculator, calculator_m, ray_origin, ray_dir, color, raytime, culling, bg, is_probe, 0, settings);
+	}
+	else
+	{
+		trace_rec(calculator, calculator_m, ray_origin, ray_dir, color, raytime, culling, is_hdr, bg, is_probe, pixelu, pixelv, 0);
+	}
 
 	color.store();
+
+	if (settings.sampleMaxVal > 0.0f)
+	{
+		float r = color.get_x();
+		float g = color.get_y();
+		float b = color.get_z();
+		r = std::min(r, settings.sampleMaxVal);
+		g = std::min(g, settings.sampleMaxVal);
+		b = std::min(b, settings.sampleMaxVal);
+		color.load(r, g, b);
+	}
+
 	output[0] = color.get_x();
 	output[1] = color.get_y();
 	output[2] = color.get_z();

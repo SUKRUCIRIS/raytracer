@@ -332,6 +332,37 @@ std::vector<camera> *parser::get_camera(simd_vec3 &calculator, simd_mat4 &calcul
 
 		c->is_hdr = imgName.ends_with(".exr");
 
+		if (cam.HasMember("Renderer"))
+		{
+			std::string renderer = cam["Renderer"].GetString();
+			if (renderer == "PathTracing")
+			{
+				c->renderSettings.isPathTracing = true;
+			}
+		}
+
+		if (cam.HasMember("RendererParams"))
+		{
+			std::string params = cam["RendererParams"].GetString();
+			if (params.find("ImportanceSampling") != std::string::npos)
+				c->renderSettings.importanceSampling = true;
+			if (params.find("NextEventEstimation") != std::string::npos)
+				c->renderSettings.nextEventEstimation = true;
+			if (params.find("RussianRoulette") != std::string::npos)
+				c->renderSettings.russianRoulette = true;
+			if (params.find("MIS_BALANCE") != std::string::npos)
+				c->renderSettings.mis = true;
+		}
+
+		if (cam.HasMember("SplittingFactor"))
+			c->renderSettings.splittingFactor = std::stoi(cam["SplittingFactor"].GetString());
+
+		if (cam.HasMember("SampleMaxVal"))
+			c->renderSettings.sampleMaxVal = std::stof(cam["SampleMaxVal"].GetString());
+
+		if (cam.HasMember("MinRecursionDepth"))
+			c->renderSettings.minRecursionDepth = std::stoi(cam["MinRecursionDepth"].GetString());
+
 		if (cam.HasMember("Tonemap"))
 		{
 			auto extractTonemap = [&](const rapidjson::Value &val)
@@ -625,7 +656,8 @@ std::vector<material> *parser::get_materials()
 }
 
 std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calculator_m, std::vector<vec3> *vertices, std::vector<material> *materials,
-										 transformations *t, std::vector<texture *> *textures, std::vector<float> *uvs, std::vector<all_mesh_infos *> *m)
+										 transformations *t, std::vector<texture *> *textures, std::vector<float> *uvs, std::vector<all_mesh_infos *> *m,
+										 std::vector<Light *> *lights)
 {
 	auto *shapes = new std::vector<shape *>;
 
@@ -687,6 +719,16 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 			m_info.motionblur.load(px, py, pz);
 		}
 
+		bool islight = false;
+		if (mesh.HasMember("Radiance"))
+		{
+			float rx, ry, rz;
+			std::istringstream rs(mesh["Radiance"].GetString());
+			rs >> rx >> ry >> rz;
+			m_info.emission.load(rx, ry, rz);
+			islight = true;
+		}
+
 		ami->mesh_infos[mesh_id] = m_info;
 
 		std::string shadingMode = "flat";
@@ -744,7 +786,7 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 					{
 						return (uv_sz == 0) ? 0.0f : uvs->at(index % uv_sz);
 					};
-					shapes->push_back(new triangle(
+					auto t = new triangle(
 						calculator,
 						&vertices->at(tri[0]),
 						&vertices->at(tri[1]),
@@ -754,7 +796,10 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 						vertex_normals[tri[0]],
 						vertex_normals[tri[1]],
 						vertex_normals[tri[2]],
-						&mat, ami));
+						&mat, ami);
+					shapes->push_back(t);
+					if (islight)
+						lights->push_back(new TriangleLight(calculator, calculator_m, t, mesh_id, m_info.emission));
 				}
 			}
 			else
@@ -766,14 +811,17 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 					{
 						return (uv_sz == 0) ? 0.0f : uvs->at(index % uv_sz);
 					};
-					shapes->push_back(new triangle(
+					auto t = new triangle(
 						calculator,
 						&vertices->at(tri[0]),
 						&vertices->at(tri[1]),
 						&vertices->at(tri[2]),
 						vec3(get_uv(tri[0] * 2), get_uv(tri[1] * 2), get_uv(tri[2] * 2)),
 						vec3(get_uv(tri[0] * 2 + 1), get_uv(tri[1] * 2 + 1), get_uv(tri[2] * 2 + 1)),
-						&mat, ami));
+						&mat, ami);
+					shapes->push_back(t);
+					if (islight)
+						lights->push_back(new TriangleLight(calculator, calculator_m, t, mesh_id, m_info.emission));
 				}
 			}
 		}
@@ -1066,6 +1114,22 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 	if (objects.HasMember("Mesh"))
 	{
 		const auto &node = objects["Mesh"];
+		if (node.IsArray())
+		{
+			for (const auto &item : node.GetArray())
+			{
+				processMesh(item);
+			}
+		}
+		else if (node.IsObject())
+		{
+			processMesh(node);
+		}
+	}
+
+	if (objects.HasMember("LightMesh"))
+	{
+		const auto &node = objects["LightMesh"];
 		if (node.IsArray())
 		{
 			for (const auto &item : node.GetArray())

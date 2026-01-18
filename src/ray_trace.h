@@ -4,6 +4,7 @@
 #include "shapes.h"
 #include "bvh.h"
 #include "lights.h"
+#include "camera.h"
 
 class ray_tracer
 {
@@ -20,6 +21,9 @@ private:
 	void trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
 				   vec3 &color, const float &raytime, const bool culling, bool is_hdr, texture *bg, bool is_probe, float pixelu, float pixelv, int depth) const;
 
+	void path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
+					vec3 &color, const float &raytime, const bool culling, texture *bg, bool is_probe, int depth, const RenderSettings &settings) const;
+
 	void calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
 						 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
 						 const shape *min_shape, const float &raytime, int id, bool is_hdr, vec3 &color) const;
@@ -34,6 +38,10 @@ private:
 
 	void apply_bump_map(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, const std::vector<texture *> *textures,
 						const shape *min_shape, int id, vec3 &normal) const;
+
+	void get_orthonormal_basis(const vec3 &normal, vec3 &u, vec3 &v, vec3 &w) const;
+	void sample_cosine_hemisphere(float r1, float r2, const vec3 &normal, vec3 &dir, float &pdf) const;
+	void sample_uniform_hemisphere(float r1, float r2, const vec3 &normal, vec3 &dir, float &pdf) const;
 
 public:
 	ray_tracer() = delete;
@@ -55,5 +63,6 @@ public:
 		delete bvhx;
 	}
 	void trace(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &ray_origin, const vec3 &ray_dir,
-			   const float &raytime, const bool culling, bool is_hdr, texture *bg, bool is_probe, float pixelu, float pixelv, float *output) const;
+			   const float &raytime, const bool culling, bool is_hdr, texture *bg, bool is_probe, float pixelu,
+			   float pixelv, float *output, const RenderSettings &settings) const;
 };

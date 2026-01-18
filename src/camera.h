@@ -20,6 +20,18 @@ struct Tonemap
 	std::string Extension;
 };
 
+struct RenderSettings
+{
+	bool isPathTracing = false;
+	bool importanceSampling = false;
+	bool nextEventEstimation = false;
+	bool russianRoulette = false;
+	bool mis = false;
+	int splittingFactor = 1;
+	float sampleMaxVal = -1.0f;
+	int minRecursionDepth = 0;
+};
+
 class camera
 {
 public:
@@ -41,6 +53,7 @@ public:
 	vec3 center;
 	bool is_hdr = false;
 	std::vector<Tonemap> Tonemaps;
+	RenderSettings renderSettings;
 	camera(simd_vec3 &calculator, simd_mat4 &calculator_m, float position_x, float position_y, float position_z,
 		   float gaze_x, float gaze_y, float gaze_z,
 		   float up_x, float up_y, float up_z, float neardistance,

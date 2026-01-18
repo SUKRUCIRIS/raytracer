@@ -74,6 +74,7 @@ struct mesh_info
 	mat4 normal;
 	material *mat;
 	vec3 motionblur;
+	vec3 emission{0, 0, 0};
 	std::vector<texture *> textures;
 };
 
@@ -103,6 +104,7 @@ public:
 	virtual void get_normal(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &normal) const = 0;
 	virtual void getBoundingBox(int id, simd_vec3 &calculator, simd_mat4 &calculator_m, aabb &box) const;
 	virtual std::vector<int> get_ids() const;
+	virtual vec3 getEmission(int id) const { return vec3(0, 0, 0); }
 };
 
 class triangle : public shape
@@ -140,6 +142,10 @@ public:
 						   float &t, int id, float time, bool culling = true, const float EPSILON = 1e-6f) const override;
 
 	virtual std::vector<int> get_ids() const override;
+
+	virtual vec3 getEmission(int id) const override;
+
+	void getWorldVertices(simd_vec3 &calculator, simd_mat4 &calculator_m, int id, vec3 &v0, vec3 &v1, vec3 &v2);
 };
 
 class sphere : public shape

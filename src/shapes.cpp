@@ -315,6 +315,32 @@ void triangle::get_tangent(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 
 	tangent.store();
 }
 
+vec3 triangle::getEmission(int id) const
+{
+	if (m && m->mesh_infos.count(id))
+	{
+		return m->mesh_infos.at(id).emission;
+	}
+	return vec3(0, 0, 0);
+}
+
+void triangle::getWorldVertices(simd_vec3 &calculator, simd_mat4 &calculator_m, int id, vec3 &v0, vec3 &v1, vec3 &v2)
+{
+	if (m && m->mesh_infos.count(id))
+	{
+		const auto &info = m->mesh_infos.at(id);
+		calculator_m.mult_vec(info.model, c1, v0, false);
+		calculator_m.mult_vec(info.model, c2, v1, false);
+		calculator_m.mult_vec(info.model, c3, v2, false);
+	}
+	else
+	{
+		v0 = c1;
+		v1 = c2;
+		v2 = c3;
+	}
+}
+
 sphere::sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, std::vector<texture *> textures, mat4 model,
 			   mat4 inv_model, mat4 normal_m)
 	: center(*center), radius(radius), shape(mat, shape_type::Sphere, textures), model(model), inv_model(inv_model), normal_m(normal_m)

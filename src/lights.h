@@ -1,6 +1,7 @@
 #pragma once
 #include "algebra.h"
 #include "texture.h"
+#include "shapes.h"
 
 class Light
 {
@@ -13,13 +14,14 @@ public:
 	virtual int get_sample_count() const = 0;
 
 	virtual void get_sample(simd_vec3 &calculator,
+							simd_mat4 &calculator_m,
 							const vec3 &hit_point,
 							const vec3 &normal,
 							float rand_u, float rand_v,
 							vec3 &sample_pos,
 							vec3 &incident_radiance,
 							vec3 &light_dir,
-							float &dist) const = 0;
+							float &dist) = 0;
 };
 
 class PointLight : public Light
@@ -33,13 +35,14 @@ public:
 	int get_sample_count() const override;
 
 	void get_sample(simd_vec3 &calculator,
+					simd_mat4 &calculator_m,
 					const vec3 &hit_point,
 					const vec3 &normal,
 					float rand_u, float rand_v,
 					vec3 &sample_pos,
 					vec3 &incident_radiance,
 					vec3 &light_dir,
-					float &dist) const override;
+					float &dist) override;
 };
 
 class AreaLight : public Light
@@ -59,13 +62,14 @@ public:
 	int get_sample_count() const override;
 
 	void get_sample(simd_vec3 &calculator,
+					simd_mat4 &calculator_m,
 					const vec3 &hit_point,
 					const vec3 &normal,
 					float rand_u, float rand_v,
 					vec3 &sample_pos,
 					vec3 &incident_radiance,
 					vec3 &light_dir,
-					float &dist) const override;
+					float &dist) override;
 };
 
 class DirectionalLight : public Light
@@ -79,13 +83,14 @@ public:
 	int get_sample_count() const override;
 
 	void get_sample(simd_vec3 &calculator,
+					simd_mat4 &calculator_m,
 					const vec3 &hit_point,
 					const vec3 &normal,
 					float rand_u, float rand_v,
 					vec3 &sample_pos,
 					vec3 &incident_radiance,
 					vec3 &light_dir,
-					float &dist) const override;
+					float &dist) override;
 };
 
 class SpotLight : public Light
@@ -102,13 +107,14 @@ public:
 	int get_sample_count() const override;
 
 	void get_sample(simd_vec3 &calculator,
+					simd_mat4 &calculator_m,
 					const vec3 &hit_point,
 					const vec3 &normal,
 					float rand_u, float rand_v,
 					vec3 &sample_pos,
 					vec3 &incident_radiance,
 					vec3 &light_dir,
-					float &dist) const override;
+					float &dist) override;
 };
 
 class SphericalDirectionalLight : public Light
@@ -123,11 +129,36 @@ public:
 	int get_sample_count() const override;
 
 	void get_sample(simd_vec3 &calculator,
+					simd_mat4 &calculator_m,
 					const vec3 &hit_point,
 					const vec3 &normal,
 					float rand_u, float rand_v,
 					vec3 &sample_pos,
 					vec3 &incident_radiance,
 					vec3 &light_dir,
-					float &dist) const override;
+					float &dist) override;
+};
+
+class TriangleLight : public Light
+{
+public:
+	triangle *tri;
+	int mesh_id;
+	vec3 radiance;
+	float area;
+	vec3 normal;
+
+	TriangleLight(simd_vec3 &calculator, simd_mat4 &calculator_m, triangle *t, int id, vec3 rad);
+
+	int get_sample_count() const override;
+
+	void get_sample(simd_vec3 &calculator,
+					simd_mat4 &calculator_m,
+					const vec3 &hit_point,
+					const vec3 &normal,
+					float rand_u, float rand_v,
+					vec3 &sample_pos,
+					vec3 &incident_radiance,
+					vec3 &light_dir,
+					float &dist) override;
 };

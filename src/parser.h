@@ -30,7 +30,8 @@ public:
 	std::vector<float> *get_uvs();
 	std::vector<material> *get_materials();
 	std::vector<shape *> *get_shapes(simd_vec3 &calculator, simd_mat4 &calculator_m, std::vector<vec3> *vertices, std::vector<material> *materials,
-									 transformations *t, std::vector<texture *> *textures, std::vector<float> *uvs, std::vector<all_mesh_infos *> *m);
+									 transformations *t, std::vector<texture *> *textures, std::vector<float> *uvs, std::vector<all_mesh_infos *> *m,
+									 std::vector<Light *> *lights);
 	std::vector<image *> *get_images();
 	std::vector<texture *> *get_textures(std::vector<image *> *images);
 	float get_intersectionepsilon();

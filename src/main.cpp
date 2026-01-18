@@ -385,9 +385,9 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 
 	auto uvs = p.get_uvs();
 	my_printf("uvs parsed\n");
-
+	auto lights = p.get_lights(calculator, mat_calc, transformations, images);
 	std::vector<all_mesh_infos *> m;
-	auto shapes = p.get_shapes(calculator, mat_calc, vertices, materials, transformations, textures, uvs, &m);
+	auto shapes = p.get_shapes(calculator, mat_calc, vertices, materials, transformations, textures, uvs, &m, lights);
 	my_printf("shapes parsed\n");
 
 	float intersectionepsilon = p.get_intersectionepsilon();
@@ -395,7 +395,6 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 	float maxdepth = p.get_maxrecursiondepth();
 	vec3 backgroundcolor = p.get_backgroundcolor();
 	vec3 ambientlight = p.get_ambientlight();
-	auto lights = p.get_lights(calculator, mat_calc, transformations, images);
 
 	bool is_probe = false;
 	for (Light *light : *lights)
@@ -461,7 +460,8 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 				for (const auto &sample : samples)
 				{
 					float temp_color[3];
-					rt->trace(calculatorp, calculator_m, sample.position, sample.direction, sample.time, false, camera.is_hdr, bg, is_probe, pixelu, pixelv, temp_color);
+					rt->trace(calculatorp, calculator_m, sample.position, sample.direction, sample.time, false,
+							  camera.is_hdr, bg, is_probe, pixelu, pixelv, temp_color, camera.renderSettings);
 
 					r_acc += temp_color[0];
 					g_acc += temp_color[1];
