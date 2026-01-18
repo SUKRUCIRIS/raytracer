@@ -289,7 +289,7 @@ void apply_tonemap(
 	float L_white = compute_white_point_exposed(Yin, exposure, tm.TMOOptions2);
 	float L_white_sq = L_white * L_white;
 
-	float saturation = tm.Saturation;
+	float saturation = tm.Saturation + 0.2f;
 	float gamma = (tm.Gamma > 1e-6f) ? tm.Gamma : 2.2f;
 	float inv_gamma = 1.0f / gamma;
 

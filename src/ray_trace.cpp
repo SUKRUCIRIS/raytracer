@@ -292,16 +292,18 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 					calculator.mult_scalar(F, factor, final_specular);
 				}
 
-				vec3 diff_factor = {1, 1, 1};
 				if (mat->kdfresnel)
 				{
+					vec3 diff_factor;
 					calculator.subs(one, F, diff_factor);
+					vec3 kd_ndotl;
+					calculator.mult_scalar(kd, ndotl, kd_ndotl);
+					calculator.mult(kd_ndotl, diff_factor, final_diffuse);
 				}
-
-				vec3 current_diff;
-				calculator.mult_scalar(kd, 1.0f / PI * ndotl, current_diff);
-				calculator.mult(current_diff, diff_factor, final_diffuse);
-
+				else
+				{
+					calculator.mult_scalar(kd, 1.0f / PI * ndotl, final_diffuse);
+				}
 				break;
 			}
 			}
