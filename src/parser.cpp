@@ -420,21 +420,112 @@ std::vector<float> *parser::get_uvs()
 	return res;
 }
 
+vec3 degamma_color(const vec3 &color)
+{
+	return vec3(std::pow(color.get_x(), 2.2f),
+				std::pow(color.get_y(), 2.2f),
+				std::pow(color.get_z(), 2.2f));
+}
+
 std::vector<material> *parser::get_materials()
 {
 	auto *materials = new std::vector<material>;
 
-	if (!d["Scene"].IsObject() || !d["Scene"]["Materials"].IsObject())
+	if (!d["Scene"].IsObject())
 	{
-		my_printf("Warning: No 'Materials' object found in scene.\n");
+		return materials;
+	}
+
+	struct BRDFInfo
+	{
+		BRDFType type;
+		bool normalized = false;
+		float exponent = 1.0f;
+		bool has_exponent = false;
+		bool kdfresnel = false;
+	};
+
+	std::unordered_map<int, BRDFInfo> brdfs;
+
+	if (d["Scene"].HasMember("BRDFs"))
+	{
+		const auto &brdfsNode = d["Scene"]["BRDFs"];
+		auto processBRDF = [&](const rapidjson::Value &node, BRDFType type)
+		{
+			if (!node.HasMember("_id"))
+				return;
+			int id = std::stoi(node["_id"].GetString());
+			BRDFInfo info;
+			info.type = type;
+
+			if (node.HasMember("_normalized"))
+				info.normalized = (std::string(node["_normalized"].GetString()) == "true");
+
+			if (node.HasMember("Exponent"))
+			{
+				info.exponent = std::stof(node["Exponent"].GetString());
+				info.has_exponent = true;
+			}
+
+			if (node.HasMember("_kdfresnel"))
+				info.kdfresnel = (std::string(node["_kdfresnel"].GetString()) == "true");
+
+			brdfs[id] = info;
+		};
+
+		if (brdfsNode.HasMember("OriginalBlinnPhong"))
+		{
+			const auto &n = brdfsNode["OriginalBlinnPhong"];
+			if (n.IsArray())
+				for (auto &x : n.GetArray())
+					processBRDF(x, OriginalBlinnPhong);
+			else if (n.IsObject())
+				processBRDF(n, OriginalBlinnPhong);
+		}
+		if (brdfsNode.HasMember("OriginalPhong"))
+		{
+			const auto &n = brdfsNode["OriginalPhong"];
+			if (n.IsArray())
+				for (auto &x : n.GetArray())
+					processBRDF(x, OriginalPhong);
+			else if (n.IsObject())
+				processBRDF(n, OriginalPhong);
+		}
+		if (brdfsNode.HasMember("ModifiedBlinnPhong"))
+		{
+			const auto &n = brdfsNode["ModifiedBlinnPhong"];
+			if (n.IsArray())
+				for (auto &x : n.GetArray())
+					processBRDF(x, ModifiedBlinnPhong);
+			else if (n.IsObject())
+				processBRDF(n, ModifiedBlinnPhong);
+		}
+		if (brdfsNode.HasMember("ModifiedPhong"))
+		{
+			const auto &n = brdfsNode["ModifiedPhong"];
+			if (n.IsArray())
+				for (auto &x : n.GetArray())
+					processBRDF(x, ModifiedPhong);
+			else if (n.IsObject())
+				processBRDF(n, ModifiedPhong);
+		}
+		if (brdfsNode.HasMember("TorranceSparrow"))
+		{
+			const auto &n = brdfsNode["TorranceSparrow"];
+			if (n.IsArray())
+				for (auto &x : n.GetArray())
+					processBRDF(x, TorranceSparrow);
+			else if (n.IsObject())
+				processBRDF(n, TorranceSparrow);
+		}
+	}
+
+	if (!d["Scene"].HasMember("Materials") || !d["Scene"]["Materials"].HasMember("Material"))
+	{
 		return materials;
 	}
 
 	const auto &materialsNode = d["Scene"]["Materials"];
-	if (!materialsNode.HasMember("Material"))
-	{
-		return materials;
-	}
 
 	auto processMaterial = [&](const rapidjson::Value &mat_json)
 	{
@@ -452,60 +543,68 @@ std::vector<material> *parser::get_materials()
 		{
 			std::string type_str = mat_json["_type"].GetString();
 			if (type_str == "mirror")
-			{
 				new_material.mt = Mirror;
-			}
 			else if (type_str == "dielectric")
-			{
 				new_material.mt = Dielectric;
-			}
 			else if (type_str == "conductor")
-			{
 				new_material.mt = Conductor;
-			}
 			else
-			{
 				new_material.mt = Regular;
+		}
+
+		if (mat_json.HasMember("_BRDF"))
+		{
+			int brdf_id = std::stoi(mat_json["_BRDF"].GetString());
+			if (brdfs.find(brdf_id) != brdfs.end())
+			{
+				const auto &info = brdfs[brdf_id];
+				new_material.brdfType = info.type;
+				new_material.normalized = info.normalized;
+				new_material.kdfresnel = info.kdfresnel;
+				if (info.has_exponent)
+					new_material.PhongExponent = info.exponent;
 			}
+		}
+
+		bool should_degamma = false;
+		if (mat_json.HasMember("_degamma"))
+		{
+			std::string val = mat_json["_degamma"].GetString();
+			if (val == "true")
+				should_degamma = true;
 		}
 
 		if (mat_json.HasMember("AmbientReflectance"))
 		{
 			new_material.AmbientReflectance = parseVec3(mat_json["AmbientReflectance"].GetString());
+			if (should_degamma)
+				new_material.AmbientReflectance = degamma_color(new_material.AmbientReflectance);
 		}
 		if (mat_json.HasMember("DiffuseReflectance"))
 		{
 			new_material.DiffuseReflectance = parseVec3(mat_json["DiffuseReflectance"].GetString());
+			if (should_degamma)
+				new_material.DiffuseReflectance = degamma_color(new_material.DiffuseReflectance);
 		}
 		if (mat_json.HasMember("SpecularReflectance"))
 		{
 			new_material.SpecularReflectance = parseVec3(mat_json["SpecularReflectance"].GetString());
+			if (should_degamma)
+				new_material.SpecularReflectance = degamma_color(new_material.SpecularReflectance);
 		}
 		if (mat_json.HasMember("PhongExponent"))
-		{
 			new_material.PhongExponent = std::stof(mat_json["PhongExponent"].GetString());
-		}
 
 		if (mat_json.HasMember("MirrorReflectance"))
-		{
 			new_material.MirrorReflectance = parseVec3(mat_json["MirrorReflectance"].GetString());
-		}
 		if (mat_json.HasMember("AbsorptionCoefficient"))
-		{
 			new_material.AbsorptionCoefficient = parseVec3(mat_json["AbsorptionCoefficient"].GetString());
-		}
 		if (mat_json.HasMember("RefractionIndex"))
-		{
 			new_material.RefractionIndex = std::stof(mat_json["RefractionIndex"].GetString());
-		}
 		if (mat_json.HasMember("AbsorptionIndex"))
-		{
 			new_material.AbsorptionIndex = std::stof(mat_json["AbsorptionIndex"].GetString());
-		}
 		if (mat_json.HasMember("Roughness"))
-		{
 			new_material.roughness = std::stof(mat_json["Roughness"].GetString());
-		}
 
 		materials->emplace_back(new_material);
 	};
@@ -515,9 +614,7 @@ std::vector<material> *parser::get_materials()
 	if (material_data.IsArray())
 	{
 		for (const auto &mat_item : material_data.GetArray())
-		{
 			processMaterial(mat_item);
-		}
 	}
 	else if (material_data.IsObject())
 	{
@@ -1161,9 +1258,23 @@ std::vector<Light *> *parser::get_lights(simd_vec3 &calculator, simd_mat4 &calcu
 			nStream >> px >> py >> pz;
 			normal.load(px, py, pz);
 
-			std::istringstream rStream(node["Radiance"].GetString());
-			rStream >> px >> py >> pz;
-			radiance.load(px, py, pz);
+			std::string str_val;
+			if (node.HasMember("Radiance"))
+			{
+				str_val = node["Radiance"].GetString();
+			}
+			else if (node.HasMember("Intensity"))
+			{
+				str_val = node["Intensity"].GetString();
+			}
+			else
+			{
+				radiance.load(0, 0, 0);
+			}
+			std::istringstream stream(str_val);
+			float x, y, z;
+			stream >> x >> y >> z;
+			radiance.load(x, y, z);
 
 			float size = std::stof(node["Size"].GetString());
 			int samples = 16;

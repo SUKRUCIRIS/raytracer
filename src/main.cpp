@@ -461,7 +461,7 @@ void process_file(const char *filename, int thread_count, threading_type TT)
 				for (const auto &sample : samples)
 				{
 					float temp_color[3];
-					rt->trace(calculatorp, calculator_m, sample.position, sample.direction, sample.time, true, camera.is_hdr, bg, is_probe, pixelu, pixelv, temp_color);
+					rt->trace(calculatorp, calculator_m, sample.position, sample.direction, sample.time, false, camera.is_hdr, bg, is_probe, pixelu, pixelv, temp_color);
 
 					r_acc += temp_color[0];
 					g_acc += temp_color[1];

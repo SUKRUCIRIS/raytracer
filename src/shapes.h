@@ -34,9 +34,21 @@ struct transformations
 	aabb box;
 };
 
+enum BRDFType
+{
+	OriginalBlinnPhong,
+	OriginalPhong,
+	ModifiedBlinnPhong,
+	ModifiedPhong,
+	TorranceSparrow
+};
+
 struct material
 {
 	material_type mt = Regular;
+	BRDFType brdfType = OriginalBlinnPhong;
+	bool normalized = false;
+	bool kdfresnel = false;
 	vec3 AmbientReflectance{0, 0, 0};
 	vec3 DiffuseReflectance{0, 0, 0};
 	vec3 SpecularReflectance{0, 0, 0};

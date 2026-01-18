@@ -42,7 +42,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 								 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
 								 const shape *min_shape, const float &raytime, int id, bool is_hdr, vec3 &color) const
 {
-	static thread_local shape *last_shadow_blocker = nullptr; // shadow cache optimization
+	static thread_local shape *last_shadow_blocker = nullptr;
 	static thread_local int last_blocker_id = -1;
 
 	calculator.mult(mat->AmbientReflectance, ambientlight, color);
@@ -52,6 +52,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 	vec3 replacekd_color;
 	bool replaceks = false;
 	vec3 replaceks_color;
+
 	for (auto &&i : *textures)
 	{
 		if (i->dmode == replace_kd)
@@ -86,6 +87,10 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 		}
 	}
 
+	vec3 view_dir;
+	calculator.subs(ray_origin, hit_point, view_dir);
+	calculator.normalize(view_dir, view_dir);
+
 	for (Light *light : *lights)
 	{
 		int num_samples = light->get_sample_count();
@@ -93,7 +98,6 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 
 		for (int s = 0; s < num_samples; ++s)
 		{
-
 			float r1 = get_random_float();
 			float r2 = get_random_float();
 
@@ -138,7 +142,7 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 				shape *hit_shape = 0;
 				int hit_id;
 				if (bvhx->intersect(calculator, calculator_m, shadow_origin, light_dir, raytime, t_shadow,
-									&hit_shape, hit_id, false, shadowrayepsilon, true, dist)) // check any intersect before light optimization
+									&hit_shape, hit_id, false, shadowrayepsilon, true, dist))
 				{
 					if (t_shadow < dist - shadowrayepsilon)
 					{
@@ -155,40 +159,161 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 			calculator.dot(normal, light_dir, ndotl);
 			ndotl = std::max(ndotl, 0.0f);
 
-			vec3 diffuse;
-			vec3 diffuse_color = mat->DiffuseReflectance;
-			if (replacekd || blendkd)
-			{
-				diffuse_color = replacekd_color;
-			}
-			calculator.mult_scalar(diffuse_color, ndotl, diffuse);
-			calculator.mult(diffuse, incident_radiance, diffuse);
-			calculator.mult_scalar(diffuse, weight, diffuse);
-			calculator.add(color, diffuse, color);
-
-			vec3 view_dir;
-			calculator.subs(ray_origin, hit_point, view_dir);
-			calculator.normalize(view_dir, view_dir);
-
 			vec3 h;
 			calculator.add(light_dir, view_dir, h);
 			calculator.normalize(h, h);
 
-			float ndoth;
-			calculator.dot(normal, h, ndoth);
-			ndoth = std::max(ndoth, 0.0f);
+			vec3 final_diffuse = {0, 0, 0}, final_specular = {0, 0, 0};
 
-			float spec_factor = powf(ndoth, mat->PhongExponent);
-			vec3 specular;
-			vec3 spec_color = mat->SpecularReflectance;
+			vec3 kd = mat->DiffuseReflectance;
+			if (replacekd || blendkd)
+				kd = replacekd_color;
+
+			vec3 ks = mat->SpecularReflectance;
 			if (replaceks)
+				ks = replaceks_color;
+
+			float p = mat->PhongExponent;
+			float PI = 3.14159265359f;
+
+			switch (mat->brdfType)
 			{
-				spec_color = replaceks_color;
+			case OriginalBlinnPhong:
+			{
+				calculator.mult_scalar(kd, ndotl, final_diffuse);
+
+				float ndoth;
+				calculator.dot(normal, h, ndoth);
+				ndoth = std::max(ndoth, 0.0f);
+				float spec_val = powf(ndoth, p);
+				calculator.mult_scalar(ks, spec_val, final_specular);
+				break;
 			}
-			calculator.mult_scalar(spec_color, spec_factor, specular);
-			calculator.mult(specular, incident_radiance, specular);
-			calculator.mult_scalar(specular, weight, specular);
-			calculator.add(color, specular, color);
+			case OriginalPhong:
+			{
+				calculator.mult_scalar(kd, ndotl, final_diffuse);
+
+				vec3 R;
+				vec3 negL;
+				calculator.mult_scalar(light_dir, -1.0f, negL);
+				calculate_reflected_dir(calculator, normal, negL, R, 0);
+				float rdoth;
+				calculator.dot(R, view_dir, rdoth);
+				rdoth = std::max(rdoth, 0.0f);
+				float spec_val = powf(rdoth, p);
+				calculator.mult_scalar(ks, spec_val, final_specular);
+				break;
+			}
+			case ModifiedBlinnPhong:
+			{
+
+				float ndoth;
+				calculator.dot(normal, h, ndoth);
+				ndoth = std::max(ndoth, 0.0f);
+
+				if (mat->normalized)
+				{
+					calculator.mult_scalar(kd, 1.0f / PI * ndotl, final_diffuse);
+
+					float norm = (p + 8.0f) / (8.0f * PI);
+					float spec_val = norm * powf(ndoth, p) * ndotl;
+					calculator.mult_scalar(ks, spec_val, final_specular);
+				}
+				else
+				{
+					calculator.mult_scalar(kd, ndotl, final_diffuse);
+
+					float spec_val = powf(ndoth, p) * ndotl;
+					calculator.mult_scalar(ks, spec_val, final_specular);
+				}
+				break;
+			}
+			case ModifiedPhong:
+			{
+				vec3 R;
+				vec3 negL;
+				calculator.mult_scalar(light_dir, -1.0f, negL);
+				calculate_reflected_dir(calculator, normal, negL, R, 0);
+				float rdoth;
+				calculator.dot(R, view_dir, rdoth);
+				rdoth = std::max(rdoth, 0.0f);
+
+				if (mat->normalized)
+				{
+					calculator.mult_scalar(kd, 1.0f / PI * ndotl, final_diffuse);
+
+					float norm = (p + 2.0f) / (2.0f * PI);
+					float spec_val = norm * powf(rdoth, p) * ndotl;
+					calculator.mult_scalar(ks, spec_val, final_specular);
+				}
+				else
+				{
+					calculator.mult_scalar(kd, ndotl, final_diffuse);
+
+					float spec_val = powf(rdoth, p) * ndotl;
+					calculator.mult_scalar(ks, spec_val, final_specular);
+				}
+				break;
+			}
+			case TorranceSparrow:
+			{
+
+				float ndoth, ndotv, vdoth;
+				calculator.dot(normal, h, ndoth);
+				calculator.dot(normal, view_dir, ndotv);
+				calculator.dot(view_dir, h, vdoth);
+
+				ndoth = std::max(ndoth, 0.0f);
+				ndotv = std::max(ndotv, 0.0f);
+				vdoth = std::max(vdoth, 0.0f);
+
+				float D = (p + 2.0f) / (2.0f * PI) * powf(ndoth, p);
+
+				vec3 F;
+				float f_term = powf(1.0f - vdoth, 5.0f);
+				vec3 one(1, 1, 1);
+				vec3 inv_ks;
+				calculator.subs(one, ks, inv_ks);
+				calculator.mult_scalar(inv_ks, f_term, inv_ks);
+				calculator.add(ks, inv_ks, F);
+
+				float G = 1.0f;
+				if (vdoth > 1e-6f)
+				{
+					float g1 = (2.0f * ndoth * ndotv) / vdoth;
+					float g2 = (2.0f * ndoth * ndotl) / vdoth;
+					G = std::min(1.0f, std::min(g1, g2));
+				}
+
+				if (ndotv > 1e-6f)
+				{
+					float denom = 4.0f * ndotv;
+					float factor = (D * G) / denom;
+					calculator.mult_scalar(F, factor, final_specular);
+				}
+
+				vec3 diff_factor = {1, 1, 1};
+				if (mat->kdfresnel)
+				{
+					calculator.subs(one, F, diff_factor);
+				}
+
+				vec3 current_diff;
+				calculator.mult_scalar(kd, 1.0f / PI * ndotl, current_diff);
+				calculator.mult(current_diff, diff_factor, final_diffuse);
+
+				break;
+			}
+			}
+
+			calculator.mult(final_diffuse, incident_radiance, final_diffuse);
+			calculator.mult_scalar(final_diffuse, weight, final_diffuse);
+
+			calculator.mult(final_specular, incident_radiance, final_specular);
+			calculator.mult_scalar(final_specular, weight, final_specular);
+
+			calculator.add(color, final_diffuse, color);
+			calculator.add(color, final_specular, color);
 		}
 	}
 

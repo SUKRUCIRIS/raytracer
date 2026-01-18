@@ -38,8 +38,6 @@ void PointLight::get_sample(simd_vec3 &calculator,
 	incident_radiance.store();
 }
 
-// --- AreaLight ---
-
 AreaLight::AreaLight(simd_vec3 &calculator, vec3 pos, vec3 norm, float sz, vec3 rad, int sample_count)
 	: position(pos), normal(norm), size(sz), radiance(rad), samples(sample_count)
 {
@@ -108,8 +106,6 @@ void AreaLight::get_sample(simd_vec3 &calculator,
 	incident_radiance.store();
 }
 
-// --- DirectionalLight ---
-
 DirectionalLight::DirectionalLight(simd_vec3 &calculator, vec3 dir, vec3 rad)
 	: direction(dir), radiance(rad)
 {
@@ -130,7 +126,6 @@ void DirectionalLight::get_sample(simd_vec3 &calculator,
 {
 	dist = std::numeric_limits<float>::max();
 
-	// Fix: Invert the stored direction to get Vector To Light (L)
 	calculator.mult_scalar(direction, -1.0f, light_dir);
 	light_dir.store();
 
@@ -141,8 +136,6 @@ void DirectionalLight::get_sample(simd_vec3 &calculator,
 	incident_radiance = radiance;
 	incident_radiance.store();
 }
-
-// --- SpotLight ---
 
 SpotLight::SpotLight(simd_vec3 &calculator, vec3 pos, vec3 dir, vec3 inten, float coverage_deg, float falloff_deg)
 	: position(pos), direction(dir), intensity(inten)
@@ -168,10 +161,8 @@ void SpotLight::get_sample(simd_vec3 &calculator,
 						   vec3 &light_dir,
 						   float &dist) const
 {
-	// 1. Calculate vector from Hit Point TO Light Position
-	// (Your previous code calculated Light -> Hit Point)
 	vec3 dir_unnormalized;
-	calculator.subs(position, hit_point, dir_unnormalized); // pos - hit = vector to light
+	calculator.subs(position, hit_point, dir_unnormalized);
 
 	float d2;
 	calculator.dot(dir_unnormalized, dir_unnormalized, d2);
@@ -185,24 +176,19 @@ void SpotLight::get_sample(simd_vec3 &calculator,
 		return;
 	}
 
-	// Normalize to get valid shadow ray direction
 	calculator.mult_scalar(dir_unnormalized, 1.0f / dist, light_dir);
 	light_dir.store();
 
-	// Set sample position (the light source location)
 	sample_pos = position;
 
-	// 2. Calculate Spot Factor
-	// We need the vector from Light TO Hit Point to check against the spot direction
 	vec3 light_to_point;
-	calculator.mult_scalar(light_dir, -1.0f, light_to_point); // Invert L to get Light->Point
+	calculator.mult_scalar(light_dir, -1.0f, light_to_point);
 
 	float cos_alpha;
 	calculator.dot(light_to_point, direction, cos_alpha);
 
 	float spot_factor = 0.0f;
 
-	// Check angles (falloff/coverage)
 	if (cos_alpha > falloff_angle_cos)
 	{
 		spot_factor = 1.0f;
@@ -212,18 +198,14 @@ void SpotLight::get_sample(simd_vec3 &calculator,
 		float num = cos_alpha - coverage_angle_cos;
 		float den = falloff_angle_cos - coverage_angle_cos;
 		float ratio = num / den;
-		spot_factor = ratio * ratio * ratio * ratio; // pow(ratio, 4)
+		spot_factor = ratio * ratio * ratio * ratio;
 	}
 
-	// 3. Calculate Final Radiance
-	// Intensity * SpotFactor * DistanceAttenuation
 	float combined_factor = spot_factor / d2;
 	calculator.mult_scalar(intensity, combined_factor, incident_radiance);
 
 	incident_radiance.store();
 }
-
-// --- SphericalDirectionalLight ---
 
 SphericalDirectionalLight::SphericalDirectionalLight(const image *img, bool cosine_sample, bool is_probe)
 	: env_map(img), use_cosine_sampling(cosine_sample), is_probe_map(is_probe) {}
@@ -264,7 +246,6 @@ void SphericalDirectionalLight::get_sample(simd_vec3 &calculator,
 	float ly = sin_theta * std::sin(phi);
 	float lz = cos_theta;
 
-	// Use the passed normal to build the basis
 	vec3 w = normal;
 	w.store();
 
