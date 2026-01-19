@@ -162,3 +162,24 @@ public:
 					vec3 &light_dir,
 					float &dist) override;
 };
+
+class SphereLight : public Light
+{
+public:
+	sphere *sph;
+	vec3 radiance;
+
+	SphereLight(simd_vec3 &calculator, simd_mat4 &calculator_m, sphere *s, vec3 rad);
+
+	int get_sample_count() const override;
+
+	void get_sample(simd_vec3 &calculator,
+					simd_mat4 &calculator_m,
+					const vec3 &hit_point,
+					const vec3 &normal,
+					float rand_u, float rand_v,
+					vec3 &sample_pos,
+					vec3 &incident_radiance,
+					vec3 &light_dir,
+					float &dist) override;
+};

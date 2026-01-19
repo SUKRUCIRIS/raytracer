@@ -971,40 +971,50 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 		float radius = std::stof(sph["Radius"].GetString());
 
 		mat4 model;
-
 		processTrans(sph, calculator_m, t, model);
-
 		mat4 inv;
-
 		calculator_m.inverse(model, inv);
+		mat4 normal_m; // Değişken adı 'normal' yerine 'normal_m' kullanıldı karışıklığı önlemek için
+		calculator_m.transpose(inv, normal_m);
 
-		mat4 normal;
-
-		calculator_m.transpose(inv, normal);
+		bool islight = false;
+		vec3 emission(0, 0, 0);
+		if (sph.HasMember("Radiance"))
+		{
+			float rx, ry, rz;
+			std::istringstream rs(sph["Radiance"].GetString());
+			rs >> rx >> ry >> rz;
+			emission.load(rx, ry, rz);
+			islight = true;
+		}
 
 		std::vector<texture *> texturesx;
 		if (sph.HasMember("Textures"))
 		{
 			std::istringstream iss(sph["Textures"].GetString());
 			int x;
-
 			while (iss >> x)
 			{
 				for (auto &&i : *textures)
 				{
 					if (i->id == x)
-					{
 						texturesx.push_back(i);
-					}
 				}
 			}
 		}
 
-		shapes->push_back(new sphere(
+		sphere *s = new sphere(
 			calculator, calculator_m,
 			&vertices->at(center_idx - 1),
 			radius,
-			&materials->at(std::stoi(sph["Material"].GetString()) - 1), texturesx, model, inv, normal));
+			&materials->at(std::stoi(sph["Material"].GetString()) - 1), texturesx, model, inv, normal_m, emission);
+
+		shapes->push_back(s);
+
+		if (islight)
+		{
+			lights->push_back(new SphereLight(calculator, calculator_m, s, emission));
+		}
 	};
 
 	auto processPlane = [&](const rapidjson::Value &pl)
@@ -1178,6 +1188,22 @@ std::vector<shape *> *parser::get_shapes(simd_vec3 &calculator, simd_mat4 &calcu
 	if (objects.HasMember("Sphere"))
 	{
 		const auto &node = objects["Sphere"];
+		if (node.IsArray())
+		{
+			for (const auto &item : node.GetArray())
+			{
+				processSphere(item);
+			}
+		}
+		else if (node.IsObject())
+		{
+			processSphere(node);
+		}
+	}
+
+	if (objects.HasMember("LightSphere"))
+	{
+		const auto &node = objects["LightSphere"];
 		if (node.IsArray())
 		{
 			for (const auto &item : node.GetArray())

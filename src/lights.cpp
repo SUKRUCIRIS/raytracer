@@ -335,7 +335,7 @@ TriangleLight::TriangleLight(simd_vec3 &calculator, simd_mat4 &calculator_m, tri
 	normal.store();
 }
 
-int TriangleLight::get_sample_count() const { return 1; }
+int TriangleLight::get_sample_count() const { return 16; }
 
 void TriangleLight::get_sample(simd_vec3 &calculator,
 							   simd_mat4 &calculator_m,
@@ -379,6 +379,81 @@ void TriangleLight::get_sample(simd_vec3 &calculator,
 	calculator.dot(normal, neg_light_dir, cos_theta_light);
 
 	cos_theta_light = std::abs(cos_theta_light);
+
+	float factor = (area * cos_theta_light) / d2;
+	calculator.mult_scalar(radiance, factor, incident_radiance);
+	incident_radiance.store();
+}
+
+SphereLight::SphereLight(simd_vec3 &calculator, simd_mat4 &calculator_m, sphere *s, vec3 rad)
+	: sph(s), radiance(rad) {}
+
+int SphereLight::get_sample_count() const { return 16; }
+
+void SphereLight::get_sample(simd_vec3 &calculator,
+							 simd_mat4 &calculator_m,
+							 const vec3 &hit_point,
+							 const vec3 &normal_at_hit,
+							 float rand_u, float rand_v,
+							 vec3 &sample_pos,
+							 vec3 &incident_radiance,
+							 vec3 &light_dir,
+							 float &dist)
+{
+	float phi = 2.0f * 3.14159265359f * rand_u;
+	float cos_theta = 1.0f - 2.0f * rand_v;
+	float sin_theta = std::sqrt(std::max(0.0f, 1.0f - cos_theta * cos_theta));
+
+	float x = sin_theta * std::cos(phi);
+	float y = sin_theta * std::sin(phi);
+	float z = cos_theta;
+
+	vec3 unit_vec(x, y, z);
+
+	vec3 center = sph->get_center();
+	float radius = sph->get_radius();
+	mat4 model = sph->get_model();
+	mat4 normal_m = sph->get_normal_matrix();
+
+	vec3 local_p;
+	calculator.mult_scalar(unit_vec, radius, local_p);
+	calculator.add(center, local_p, local_p);
+
+	calculator_m.mult_vec(model, local_p, sample_pos, false);
+
+	vec3 normal_light;
+	calculator_m.mult_vec(normal_m, unit_vec, normal_light, true);
+	calculator.normalize(normal_light, normal_light);
+	normal_light.store();
+
+	vec3 dir_unnormalized;
+	calculator.subs(sample_pos, hit_point, dir_unnormalized);
+
+	float d2;
+	calculator.dot(dir_unnormalized, dir_unnormalized, d2);
+	dist = std::sqrt(d2);
+
+	calculator.mult_scalar(dir_unnormalized, 1.0f / dist, light_dir);
+	light_dir.store();
+
+	vec3 neg_light_dir;
+	calculator.mult_scalar(light_dir, -1.0f, neg_light_dir);
+	float cos_theta_light;
+	calculator.dot(normal_light, neg_light_dir, cos_theta_light);
+
+	if (cos_theta_light <= 0.0f)
+	{
+		incident_radiance.load(0, 0, 0);
+		return;
+	}
+
+	vec3 r_vec(radius, 0, 0);
+	vec3 r_world_vec;
+	calculator_m.mult_vec(model, r_vec, r_world_vec, true);
+	float r_world_sq;
+	calculator.length_squared(r_world_vec, r_world_sq);
+
+	float area = 4.0f * 3.14159265359f * r_world_sq;
 
 	float factor = (area * cos_theta_light) / d2;
 	calculator.mult_scalar(radiance, factor, incident_radiance);

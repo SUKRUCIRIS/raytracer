@@ -156,11 +156,12 @@ private:
 	mat4 model;
 	mat4 inv_model;
 	mat4 normal_m;
+	vec3 emission;
 
 public:
 	sphere() = delete;
 	sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, std::vector<texture *> textures, mat4 model,
-		   mat4 inv_model, mat4 normal_m);
+		   mat4 inv_model, mat4 normal_m, vec3 emission);
 
 	vec3 get_center() const;
 
@@ -172,6 +173,14 @@ public:
 	virtual void calculate_uv(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, float &u, float &v) const override;
 
 	virtual void get_tangent(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 &hit_point, int id, vec3 &tangent) const override;
+
+	float get_radius() const { return radius; }
+
+	mat4 get_model() const { return model; }
+
+	mat4 get_normal_matrix() const { return normal_m; }
+
+	virtual vec3 getEmission(int id) const override { return emission; };
 };
 
 class plane : public shape

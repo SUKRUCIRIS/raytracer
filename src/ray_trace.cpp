@@ -1072,7 +1072,17 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 				if (bvhx->intersect(calculator, calculator_m, shadow_orig, light_dir, raytime, t_shadow, &sh_hit, sh_id, false, shadowrayepsilon, true, dist))
 				{
 					if (t_shadow < dist - shadowrayepsilon)
-						in_shadow = true;
+					{
+						vec3 em = sh_hit->getEmission(sh_id);
+						if (em.get_x() > 1e-4f || em.get_y() > 1e-4f || em.get_z() > 1e-4f)
+						{
+							in_shadow = false;
+						}
+						else
+						{
+							in_shadow = true;
+						}
+					}
 				}
 
 				if (!in_shadow)

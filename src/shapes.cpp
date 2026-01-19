@@ -342,8 +342,8 @@ void triangle::getWorldVertices(simd_vec3 &calculator, simd_mat4 &calculator_m, 
 }
 
 sphere::sphere(simd_vec3 &calculator, simd_mat4 &calculator_m, vec3 *center, float radius, material *mat, std::vector<texture *> textures, mat4 model,
-			   mat4 inv_model, mat4 normal_m)
-	: center(*center), radius(radius), shape(mat, shape_type::Sphere, textures), model(model), inv_model(inv_model), normal_m(normal_m)
+			   mat4 inv_model, mat4 normal_m, vec3 emission)
+	: center(*center), radius(radius), shape(mat, shape_type::Sphere, textures), model(model), inv_model(inv_model), normal_m(normal_m), emission(emission)
 {
 	vec3 rvec(radius);
 	calculator.subs(*center, rvec, box.min);
