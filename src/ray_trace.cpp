@@ -104,53 +104,75 @@ void ray_tracer::sample_uniform_hemisphere(float r1, float r2, const vec3 &norma
 	pdf = 1.0f / (2.0f * 3.14159265359f);
 }
 
-void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
-								 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
-								 const shape *min_shape, const float &raytime, int id, bool is_hdr, vec3 &color) const
+void ray_tracer::resolve_textures(simd_vec3 &calculator, simd_mat4 &calculator_m,
+								  vec3 &hit_point, const shape *min_shape, int id,
+								  const material *mat, const std::vector<texture *> *textures,
+								  vec3 &kd, vec3 &ks, bool &is_replace_all, vec3 &replace_all_color) const
 {
-	static thread_local shape *last_shadow_blocker = nullptr;
-	static thread_local int last_blocker_id = -1;
+	kd = mat->DiffuseReflectance;
+	ks = mat->SpecularReflectance;
+	is_replace_all = false;
 
-	calculator.mult(mat->AmbientReflectance, ambientlight, color);
+	if (!textures)
+		return;
 
-	bool replacekd = false;
-	bool blendkd = false;
-	vec3 replacekd_color;
-	bool replaceks = false;
-	vec3 replaceks_color;
+	vec3 temp_color;
 
 	for (auto &&i : *textures)
 	{
 		if (i->dmode == replace_kd)
 		{
-			replacekd = true;
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			i->sample(u, v, hit_point, replacekd_color);
+			i->sample(u, v, hit_point, kd);
 		}
 		else if (i->dmode == blend_kd)
 		{
-			blendkd = true;
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			i->sample(u, v, hit_point, replacekd_color);
-			calculator.add(mat->DiffuseReflectance, replacekd_color, replacekd_color);
-			calculator.mult_scalar(replacekd_color, 0.5f, replacekd_color);
+			i->sample(u, v, hit_point, temp_color);
+			calculator.add(mat->DiffuseReflectance, temp_color, kd);
+			calculator.mult_scalar(kd, 0.5f, kd);
 		}
 		else if (i->dmode == replace_ks)
 		{
-			replaceks = true;
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			i->sample(u, v, hit_point, replaceks_color);
+			i->sample(u, v, hit_point, ks);
 		}
 		else if (i->dmode == replace_all)
 		{
 			float u, v;
 			min_shape->calculate_uv(calculator, calculator_m, hit_point, id, u, v);
-			i->sample(u, v, hit_point, color);
+			i->sample(u, v, hit_point, replace_all_color);
+			is_replace_all = true;
 			return;
 		}
+	}
+}
+
+void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m, const vec3 &normal, const material *mat,
+								 const std::vector<texture *> *textures, vec3 &hit_point, const vec3 &ray_origin,
+								 const shape *min_shape, const float &raytime, int id, bool is_hdr, bool include_ambient, vec3 &color) const
+{
+	static thread_local shape *last_shadow_blocker = nullptr;
+	static thread_local int last_blocker_id = -1;
+
+	vec3 kd, ks, replace_all_color;
+	bool is_replace_all = false;
+	resolve_textures(calculator, calculator_m, hit_point, min_shape, id, mat, textures, kd, ks, is_replace_all, replace_all_color);
+
+	if (is_replace_all)
+	{
+		color = replace_all_color;
+		return;
+	}
+
+	if (include_ambient)
+	{
+		vec3 ambient_term;
+		calculator.mult(mat->AmbientReflectance, ambientlight, ambient_term);
+		calculator.add(color, ambient_term, color);
 	}
 
 	vec3 view_dir;
@@ -230,14 +252,6 @@ void ray_tracer::calculate_color(simd_vec3 &calculator, simd_mat4 &calculator_m,
 			calculator.normalize(h, h);
 
 			vec3 final_diffuse = {0, 0, 0}, final_specular = {0, 0, 0};
-
-			vec3 kd = mat->DiffuseReflectance;
-			if (replacekd || blendkd)
-				kd = replacekd_color;
-
-			vec3 ks = mat->SpecularReflectance;
-			if (replaceks)
-				ks = replaceks_color;
 
 			float p = mat->PhongExponent;
 			float PI = 3.14159265359f;
@@ -726,7 +740,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		calculator.mult(color, mat->MirrorReflectance, color);
 
 		vec3 own_color;
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, own_color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, true, own_color);
 		calculator.add(color, own_color, color);
 	}
 	else if (mat->mt == Conductor)
@@ -785,7 +799,7 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		calculator.mult(reflectedColor, F, color);
 
 		vec3 own_color;
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, own_color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, true, own_color);
 		calculator.add(color, own_color, color);
 	}
 	else if (mat->mt == Dielectric)
@@ -845,12 +859,12 @@ void ray_tracer::trace_rec(simd_vec3 &calculator, simd_mat4 &calculator_m, const
 		calculator.add(reflectScaled, refractScaled, color);
 
 		vec3 own_color;
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, own_color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, true, own_color);
 		calculator.add(color, own_color, color);
 	}
 	else
 	{
-		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, color);
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, is_hdr, true, color);
 	}
 }
 
@@ -900,8 +914,19 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 	vec3 normal;
 	min_shape->get_normal(calculator, calculator_m, hit_point, min_id, normal);
 	auto textures = min_shape->getTextures(min_id);
+
 	apply_normal_map(calculator, calculator_m, hit_point, textures, min_shape, min_id, normal);
 	apply_bump_map(calculator, calculator_m, hit_point, textures, min_shape, min_id, normal);
+
+	vec3 kd, ks, replace_all_color;
+	bool is_replace_all = false;
+	resolve_textures(calculator, calculator_m, hit_point, min_shape, min_id, mat, textures, kd, ks, is_replace_all, replace_all_color);
+
+	if (is_replace_all)
+	{
+		color = replace_all_color;
+		return;
+	}
 
 	if (mat->mt == Mirror || mat->mt == Dielectric || mat->mt == Conductor)
 	{
@@ -1045,7 +1070,7 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 	float rr_prob = 1.0f;
 	if (settings.russianRoulette && depth >= settings.minRecursionDepth)
 	{
-		float max_refl = std::max({mat->DiffuseReflectance.get_x(), mat->DiffuseReflectance.get_y(), mat->DiffuseReflectance.get_z()});
+		float max_refl = std::max({kd.get_x(), kd.get_y(), kd.get_z()});
 		rr_prob = std::min(max_refl, 0.99f);
 		if (get_random_float() > rr_prob)
 			return;
@@ -1053,56 +1078,10 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 
 	if (settings.nextEventEstimation)
 	{
-		for (Light *light : *lights)
-		{
-			int samples = light->get_sample_count();
-			for (int s = 0; s < samples; ++s)
-			{
-				vec3 L_i, light_dir, light_pos;
-				float dist;
-				light->get_sample(calculator, calculator_m, hit_point, normal, get_random_float(), get_random_float(), light_pos, L_i, light_dir, dist);
-
-				vec3 shadow_orig;
-				calculator.mult_scalar(light_dir, shadowrayepsilon, shadow_orig);
-				calculator.add(hit_point, shadow_orig, shadow_orig);
-
-				float t_shadow;
-				shape *sh_hit = 0;
-				int sh_id;
-				bool in_shadow = false;
-				if (bvhx->intersect(calculator, calculator_m, shadow_orig, light_dir, raytime, t_shadow, &sh_hit, sh_id, false, shadowrayepsilon, true, dist))
-				{
-					if (t_shadow < dist - shadowrayepsilon)
-					{
-						vec3 em = sh_hit->getEmission(sh_id);
-						if (em.get_x() > 1e-4f || em.get_y() > 1e-4f || em.get_z() > 1e-4f)
-						{
-							in_shadow = false;
-						}
-						else
-						{
-							in_shadow = true;
-						}
-					}
-				}
-
-				if (!in_shadow)
-				{
-					float ndotl;
-					calculator.dot(normal, light_dir, ndotl);
-					ndotl = std::max(ndotl, 0.0f);
-					if (ndotl > 0.0f)
-					{
-						vec3 f_r;
-						calculator.mult_scalar(mat->DiffuseReflectance, 1.0f / 3.14159265359f, f_r);
-						vec3 contrib;
-						calculator.mult(f_r, L_i, contrib);
-						calculator.mult_scalar(contrib, ndotl, contrib);
-						calculator.add(color, contrib, color);
-					}
-				}
-			}
-		}
+		vec3 direct_light(0, 0, 0);
+		bool use_hdr_clamp = true;
+		calculate_color(calculator, calculator_m, normal, mat, textures, hit_point, ray_origin, min_shape, raytime, min_id, false, false, direct_light);
+		calculator.add(color, direct_light, color);
 	}
 
 	if (depth < max_depth)
@@ -1142,7 +1121,7 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 			if (pdf > 1e-6f)
 			{
 				vec3 f_r;
-				calculator.mult_scalar(mat->DiffuseReflectance, 1.0f / 3.14159265359f, f_r);
+				calculator.mult_scalar(kd, 1.0f / 3.14159265359f, f_r);
 				vec3 val;
 				calculator.mult(bounce_color, f_r, val);
 				calculator.mult_scalar(val, ndotl / pdf, val);

@@ -244,12 +244,12 @@ std::vector<texture *> *parser::get_textures(std::vector<image *> *images)
 			float px, py, pz;
 			std::istringstream intStream(tex["WhiteColor"].GetString());
 			intStream >> px >> py >> pz;
-			t->BlackColor.load(px, py, pz);
+			t->WhiteColor.load(px, py, pz);
 		}
 		if (tex.HasMember("Scale"))
 		{
 			t->ischess = true;
-			t->Scale = std::stof(tex["Scale"].GetString());
+			t->Scale = std::stof(tex["Scale"].GetString()) * 10.0f;
 		}
 		if (tex.HasMember("Offset"))
 		{
