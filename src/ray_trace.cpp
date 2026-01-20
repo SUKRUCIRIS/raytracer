@@ -999,6 +999,7 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 
 				vec3 R;
 				calculate_reflected_dir(calculator, real_normal, ray_dir, R, mat->roughness);
+
 				vec3 offset;
 				calculator.mult_scalar(real_normal, shadowrayepsilon, offset);
 				vec3 refl_orig;
@@ -1007,12 +1008,14 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 				vec3 refl_col;
 				path_trace(calculator, calculator_m, refl_orig, R, refl_col, raytime, culling, bg, is_probe, depth + 1, settings);
 
+				calculator.mult(refl_col, mat->MirrorReflectance, refl_col);
+
 				vec3 T;
 				if (calculate_refracted_dir(calculator, real_normal, ray_dir, n1, n2, T, mat->roughness))
 				{
 					vec3 refr_col;
 					vec3 neg_offset;
-					calculator.mult_scalar(offset, -1.0f, neg_offset);
+					calculator.mult_scalar(real_normal, -shadowrayepsilon, neg_offset);
 					vec3 refr_orig;
 					calculator.add(hit_point, neg_offset, refr_orig);
 
@@ -1035,7 +1038,6 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 				{
 					color = refl_col;
 				}
-				calculator.mult(color, mat->MirrorReflectance, color);
 			}
 		}
 		return;
