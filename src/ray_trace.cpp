@@ -986,7 +986,6 @@ void ray_tracer::path_trace(simd_vec3 &calculator, simd_mat4 &calculator_m, cons
 				{
 					std::swap(n1, n2);
 					calculator.mult_scalar(normal, -1.0f, real_normal);
-					cosTheta = -cosTheta;
 				}
 				else
 				{
