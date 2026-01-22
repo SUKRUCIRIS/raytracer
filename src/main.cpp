@@ -346,6 +346,10 @@ void apply_tonemap(
 
 void process_file(const char *filename, int thread_count, threading_type TT)
 {
+	const char *threading_types[] = {"row_dynamic", "row_static", "square_dynamic", "pixel_dynamic"};
+
+	my_printf("SIMD On / Thread count: %d / Threading type: %s\n", thread_count, threading_types[(int)TT]);
+
 	auto start = std::chrono::high_resolution_clock::now();
 
 	my_printf("JSON parsing started\n");
@@ -664,18 +668,39 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		my_printf("Just give input json name, threading type and thread count:\n./raytracer json_file threading_type thread_count\n");
-		return -2;
+		my_printf("Tests Started\n");
+		std::vector<std::string> files = {"C:\\Projects\\rt-res\\hw3\\inputs\\focusing_dragons.json",
+										  "C:\\Projects\\rt-res\\hw4\\inputs\\mytap\\mytap_final.json",
+										  "C:\\Projects\\rt-res\\hw4\\inputs\\galactica_dynamic.json"};
+		for (auto &&i : files)
+		{
+			process_file(i.c_str(), 4, row_dynamic);
+			process_file(i.c_str(), 8, row_dynamic);
+			process_file(i.c_str(), 12, row_dynamic);
+			process_file(i.c_str(), 16, row_dynamic);
+
+			process_file(i.c_str(), 4, row_static);
+			process_file(i.c_str(), 8, row_static);
+			process_file(i.c_str(), 12, row_static);
+			process_file(i.c_str(), 16, row_static);
+
+			process_file(i.c_str(), 4, square_dynamic);
+			process_file(i.c_str(), 8, square_dynamic);
+			process_file(i.c_str(), 12, square_dynamic);
+			process_file(i.c_str(), 16, square_dynamic);
+
+			process_file(i.c_str(), 4, pixel_dynamic);
+			process_file(i.c_str(), 8, pixel_dynamic);
+			process_file(i.c_str(), 12, pixel_dynamic);
+			process_file(i.c_str(), 16, pixel_dynamic);
+		}
+		return 0;
 	}
 	if (thread_count <= 0)
 	{
 		my_printf("Invalid thread count\n");
 		return -1;
 	}
-
-	const char *threading_types[] = {"row_dynamic", "row_static", "square_dynamic", "pixel_dynamic"};
-
-	my_printf("SIMD On / Thread count: %d / Threading type: %s\n", thread_count, threading_types[(int)TT]);
 
 	std::vector<std::string> files;
 
